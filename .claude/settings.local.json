@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(go mod init:*)",
+      "Bash(go get:*)",
+      "Bash(go install:*)",
+      "Bash(sqlc generate:*)",
+      "Bash(go build:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest init:*)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npm ls:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(make run:*)",
+      "Bash(npm run dev:*)"
+    ]
+  }
+}

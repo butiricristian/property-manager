@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS expenses;
+DROP TABLE IF EXISTS bookings;
+DROP TABLE IF EXISTS properties;
