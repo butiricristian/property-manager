@@ -9,20 +9,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/cristianbutiri/property-manager-v2/internal/database/sqlc"
+	"github.com/cristianbutiri/property-manager-v2/internal/services"
 )
 
 type BookingHandler struct {
-	queries *sqlc.Queries
+	queries     *sqlc.Queries
+	exchangeSvc *services.ExchangeService
 }
 
-func NewBookingHandler(q *sqlc.Queries) *BookingHandler {
-	return &BookingHandler{queries: q}
+func NewBookingHandler(q *sqlc.Queries, exchangeSvc *services.ExchangeService) *BookingHandler {
+	return &BookingHandler{queries: q, exchangeSvc: exchangeSvc}
+}
+
+func (h *BookingHandler) verifyPropertyOwnership(w http.ResponseWriter, r *http.Request, propertyID pgtype.UUID) bool {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return false
+	}
+	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
+		ID:     propertyID,
+		UserID: userID,
+	})
+	if err != nil || !owned {
+		respondError(w, http.StatusNotFound, "property not found")
+		return false
+	}
+	return true
 }
 
 func (h *BookingHandler) ListByProperty(w http.ResponseWriter, r *http.Request) {
 	propertyID, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid property id")
+		return
+	}
+
+	if !h.verifyPropertyOwnership(w, r, propertyID) {
 		return
 	}
 
@@ -39,9 +62,45 @@ func (h *BookingHandler) ListByProperty(w http.ResponseWriter, r *http.Request) 
 		EndDate:    endDate,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to list bookings")
+		respondInternalError(w, "failed to list bookings", err)
 		return
 	}
+
+	targetCurrency := r.URL.Query().Get("currency")
+	if targetCurrency != "" {
+		for i := range bookings {
+			b := &bookings[i]
+			if b.Currency == targetCurrency {
+				continue
+			}
+			gross, err := h.exchangeSvc.Convert(r.Context(), numericToDecimal(b.GrossAmount), b.Currency, targetCurrency, month)
+			if err != nil {
+				respondInternalError(w, "failed to convert currency", err)
+				return
+			}
+			price, err := h.exchangeSvc.Convert(r.Context(), numericToDecimal(b.Price), b.Currency, targetCurrency, month)
+			if err != nil {
+				respondInternalError(w, "failed to convert currency", err)
+				return
+			}
+			fee, err := h.exchangeSvc.Convert(r.Context(), numericToDecimal(b.PlatformFee), b.Currency, targetCurrency, month)
+			if err != nil {
+				respondInternalError(w, "failed to convert currency", err)
+				return
+			}
+			net, err := h.exchangeSvc.Convert(r.Context(), numericToDecimal(b.NetAmount), b.Currency, targetCurrency, month)
+			if err != nil {
+				respondInternalError(w, "failed to convert currency", err)
+				return
+			}
+			b.GrossAmount = decimalToNumeric(gross)
+			b.Price = decimalToNumeric(price)
+			b.PlatformFee = decimalToNumeric(fee)
+			b.NetAmount = decimalToNumeric(net)
+			b.Currency = targetCurrency
+		}
+	}
+
 	respondJSON(w, http.StatusOK, bookings)
 }
 
@@ -53,6 +112,7 @@ type createBookingRequest struct {
 	CheckOut          string  `json:"check_out"`
 	Nights            int32   `json:"nights"`
 	GrossAmount       float64 `json:"gross_amount"`
+	Price             float64 `json:"price"`
 	PlatformFee       float64 `json:"platform_fee"`
 	NetAmount         float64 `json:"net_amount"`
 	Currency          string  `json:"currency"`
@@ -71,6 +131,10 @@ func (h *BookingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	propertyID, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid property id")
+		return
+	}
+
+	if !h.verifyPropertyOwnership(w, r, propertyID) {
 		return
 	}
 
@@ -97,6 +161,9 @@ func (h *BookingHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.Status == "" {
 		req.Status = "confirmed"
 	}
+	if req.Price == 0 {
+		req.Price = req.GrossAmount
+	}
 
 	booking, err := h.queries.CreateBooking(r.Context(), sqlc.CreateBookingParams{
 		PropertyID:        propertyID,
@@ -111,23 +178,45 @@ func (h *BookingHandler) Create(w http.ResponseWriter, r *http.Request) {
 		NetAmount:         decimalFromFloat(req.NetAmount),
 		Currency:          req.Currency,
 		Status:            req.Status,
+		Price:             decimalFromFloat(req.Price),
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create booking")
+		respondInternalError(w, "failed to create booking", err)
 		return
 	}
 	respondJSON(w, http.StatusCreated, booking)
 }
 
 func (h *BookingHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid booking id")
 		return
 	}
 
+	booking, err := h.queries.GetBooking(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "booking not found")
+		return
+	}
+
+	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
+		ID:     booking.PropertyID,
+		UserID: userID,
+	})
+	if err != nil || !owned {
+		respondError(w, http.StatusNotFound, "booking not found")
+		return
+	}
+
 	if err := h.queries.DeleteBooking(r.Context(), id); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to delete booking")
+		respondInternalError(w, "failed to delete booking", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

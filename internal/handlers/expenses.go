@@ -17,10 +17,31 @@ func NewExpenseHandler(q *sqlc.Queries) *ExpenseHandler {
 	return &ExpenseHandler{queries: q}
 }
 
+func (h *ExpenseHandler) verifyPropertyOwnership(w http.ResponseWriter, r *http.Request, propertyID pgtype.UUID) bool {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return false
+	}
+	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
+		ID:     propertyID,
+		UserID: userID,
+	})
+	if err != nil || !owned {
+		respondError(w, http.StatusNotFound, "property not found")
+		return false
+	}
+	return true
+}
+
 func (h *ExpenseHandler) ListByProperty(w http.ResponseWriter, r *http.Request) {
 	propertyID, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid property id")
+		return
+	}
+
+	if !h.verifyPropertyOwnership(w, r, propertyID) {
 		return
 	}
 
@@ -37,25 +58,31 @@ func (h *ExpenseHandler) ListByProperty(w http.ResponseWriter, r *http.Request) 
 		EndDate:    endDate,
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to list expenses")
+		respondInternalError(w, "failed to list expenses", err)
 		return
 	}
 	respondJSON(w, http.StatusOK, expenses)
 }
 
 type createExpenseRequest struct {
-	Category    string  `json:"category"`
-	Description string  `json:"description"`
-	Amount      float64 `json:"amount"`
-	Currency    string  `json:"currency"`
-	Date        string  `json:"date"`
-	Recurring   bool    `json:"recurring"`
+	Category     string  `json:"category"`
+	Description  string  `json:"description"`
+	Amount       float64 `json:"amount"`
+	Currency     string  `json:"currency"`
+	Date         string  `json:"date"`
+	Recurring    bool    `json:"recurring"`
+	IsPercentage bool    `json:"is_percentage"`
+	Percentage   float64 `json:"percentage"`
 }
 
 func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
 	propertyID, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid property id")
+		return
+	}
+
+	if !h.verifyPropertyOwnership(w, r, propertyID) {
 		return
 	}
 
@@ -76,34 +103,59 @@ func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expense, err := h.queries.CreateExpense(r.Context(), sqlc.CreateExpenseParams{
-		PropertyID:  propertyID,
-		Category:    req.Category,
-		Description: req.Description,
-		Amount:      decimalFromFloat(req.Amount),
-		Currency:    req.Currency,
-		Date:        pgtype.Date{Time: date, Valid: true},
-		Recurring:   req.Recurring,
+		PropertyID:   propertyID,
+		Category:     req.Category,
+		Description:  req.Description,
+		Amount:       decimalFromFloat(req.Amount),
+		Currency:     req.Currency,
+		Date:         pgtype.Date{Time: date, Valid: true},
+		Recurring:    req.Recurring,
+		IsPercentage: req.IsPercentage,
+		Percentage:   decimalFromFloat(req.Percentage),
 	})
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to create expense")
+		respondInternalError(w, "failed to create expense", err)
 		return
 	}
 	respondJSON(w, http.StatusCreated, expense)
 }
 
 type updateExpenseRequest struct {
-	Category    string  `json:"category"`
-	Description string  `json:"description"`
-	Amount      float64 `json:"amount"`
-	Currency    string  `json:"currency"`
-	Date        string  `json:"date"`
-	Recurring   bool    `json:"recurring"`
+	Category     string  `json:"category"`
+	Description  string  `json:"description"`
+	Amount       float64 `json:"amount"`
+	Currency     string  `json:"currency"`
+	Date         string  `json:"date"`
+	Recurring    bool    `json:"recurring"`
+	IsPercentage bool    `json:"is_percentage"`
+	Percentage   float64 `json:"percentage"`
 }
 
 func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid expense id")
+		return
+	}
+
+	expense, err := h.queries.GetExpense(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "expense not found")
+		return
+	}
+
+	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
+		ID:     expense.PropertyID,
+		UserID: userID,
+	})
+	if err != nil || !owned {
+		respondError(w, http.StatusNotFound, "expense not found")
 		return
 	}
 
@@ -123,31 +175,54 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		req.Currency = "EUR"
 	}
 
-	expense, err := h.queries.UpdateExpense(r.Context(), sqlc.UpdateExpenseParams{
-		ID:          id,
-		Category:    req.Category,
-		Description: req.Description,
-		Amount:      decimalFromFloat(req.Amount),
-		Currency:    req.Currency,
-		Date:        pgtype.Date{Time: date, Valid: true},
-		Recurring:   req.Recurring,
+	updated, err := h.queries.UpdateExpense(r.Context(), sqlc.UpdateExpenseParams{
+		ID:           id,
+		Category:     req.Category,
+		Description:  req.Description,
+		Amount:       decimalFromFloat(req.Amount),
+		Currency:     req.Currency,
+		Date:         pgtype.Date{Time: date, Valid: true},
+		Recurring:    req.Recurring,
+		IsPercentage: req.IsPercentage,
+		Percentage:   decimalFromFloat(req.Percentage),
 	})
 	if err != nil {
 		respondError(w, http.StatusNotFound, "expense not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, expense)
+	respondJSON(w, http.StatusOK, updated)
 }
 
 func (h *ExpenseHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id, err := getURLParamUUID(r, "id")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid expense id")
 		return
 	}
 
+	expense, err := h.queries.GetExpense(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "expense not found")
+		return
+	}
+
+	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
+		ID:     expense.PropertyID,
+		UserID: userID,
+	})
+	if err != nil || !owned {
+		respondError(w, http.StatusNotFound, "expense not found")
+		return
+	}
+
 	if err := h.queries.DeleteExpense(r.Context(), id); err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to delete expense")
+		respondInternalError(w, "failed to delete expense", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

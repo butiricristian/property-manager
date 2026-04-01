@@ -15,7 +15,12 @@
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
       "Bash(make run:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(grep:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(python3:*)",
+      "Bash(xargs:*)",
+      "WebFetch(domain:developers.booking.com)"
     ]
   }
 }

@@ -9,34 +9,72 @@ ORDER BY date DESC;
 SELECT * FROM expenses WHERE id = $1;
 
 -- name: CreateExpense :one
-INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: UpdateExpense :one
 UPDATE expenses
-SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7
+SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9
 WHERE id = $1
 RETURNING *;
 
 -- name: DeleteExpense :exec
 DELETE FROM expenses WHERE id = $1;
 
--- name: GetExpensesByCategory :many
+-- name: GetExpensesByCategoryCurrency :many
 SELECT
     category,
+    currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE property_id = $1
   AND date >= @start_date::date
   AND date < @end_date::date
-GROUP BY category;
+  AND is_percentage = false
+GROUP BY category, currency;
 
--- name: GetAllExpensesByCategory :many
+-- name: GetAllExpensesByCategoryCurrency :many
 SELECT
     category,
+    currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE date >= @start_date::date
   AND date < @end_date::date
-GROUP BY category;
+  AND is_percentage = false
+GROUP BY category, currency;
+
+-- name: GetAllExpensesByCategoryCurrencyForUser :many
+SELECT
+    e.category,
+    e.currency,
+    COALESCE(SUM(e.amount), 0)::DECIMAL(10,2) AS total
+FROM expenses e
+JOIN properties p ON p.id = e.property_id
+WHERE p.user_id = @user_id
+  AND e.date >= @start_date::date
+  AND e.date < @end_date::date
+  AND e.is_percentage = false
+GROUP BY e.category, e.currency;
+
+-- name: GetPercentageExpensesByProperty :many
+SELECT * FROM expenses
+WHERE property_id = $1
+  AND date >= @start_date::date
+  AND date < @end_date::date
+  AND is_percentage = true;
+
+-- name: GetAllPercentageExpenses :many
+SELECT * FROM expenses
+WHERE date >= @start_date::date
+  AND date < @end_date::date
+  AND is_percentage = true;
+
+-- name: GetAllPercentageExpensesForUser :many
+SELECT e.* FROM expenses e
+JOIN properties p ON p.id = e.property_id
+WHERE p.user_id = @user_id
+  AND e.date >= @start_date::date
+  AND e.date < @end_date::date
+  AND e.is_percentage = true;

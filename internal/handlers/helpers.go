@@ -2,14 +2,19 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
+
+	"github.com/cristianbutiri/property-manager-v2/internal/auth"
 )
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -24,6 +29,11 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
+}
+
+func respondInternalError(w http.ResponseWriter, message string, err error) {
+	log.Printf("ERROR: %s: %v", message, err)
+	respondJSON(w, http.StatusInternalServerError, map[string]string{"error": message})
 }
 
 func decodeJSON(r *http.Request, v interface{}) error {
@@ -57,6 +67,36 @@ func getMonthParam(r *http.Request) string {
 		month = time.Now().Format("2006-01")
 	}
 	return month
+}
+
+func numericToDecimal(n pgtype.Numeric) decimal.Decimal {
+	if !n.Valid {
+		return decimal.Zero
+	}
+	f, _ := n.Float64Value()
+	return decimal.NewFromFloat(f.Float64)
+}
+
+func decimalToNumeric(d decimal.Decimal) pgtype.Numeric {
+	// Convert to cents (2 decimal places) for storage
+	cents := d.Mul(decimal.NewFromInt(100)).IntPart()
+	var n pgtype.Numeric
+	n.Int = big.NewInt(cents)
+	n.Exp = -2
+	n.Valid = true
+	return n
+}
+
+func getUserID(r *http.Request) (pgtype.UUID, error) {
+	userID, ok := auth.GetUserID(r.Context())
+	if !ok {
+		return pgtype.UUID{}, fmt.Errorf("user ID not found in context")
+	}
+	return userID, nil
+}
+
+func uuidBytesToString(u pgtype.UUID) string {
+	return fmt.Sprintf("%x-%x-%x-%x-%x", u.Bytes[0:4], u.Bytes[4:6], u.Bytes[6:8], u.Bytes[8:10], u.Bytes[10:16])
 }
 
 func ServeStaticFiles(r chi.Router) {

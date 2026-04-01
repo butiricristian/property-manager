@@ -12,18 +12,19 @@ import (
 )
 
 const createProperty = `-- name: CreateProperty :one
-INSERT INTO properties (name, address)
-VALUES ($1, $2)
-RETURNING id, name, address, created_at, updated_at
+INSERT INTO properties (name, address, user_id)
+VALUES ($1, $2, $3)
+RETURNING id, name, address, created_at, updated_at, user_id
 `
 
 type CreatePropertyParams struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
+	Name    string      `json:"name"`
+	Address string      `json:"address"`
+	UserID  pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) CreateProperty(ctx context.Context, arg CreatePropertyParams) (Property, error) {
-	row := q.db.QueryRow(ctx, createProperty, arg.Name, arg.Address)
+	row := q.db.QueryRow(ctx, createProperty, arg.Name, arg.Address, arg.UserID)
 	var i Property
 	err := row.Scan(
 		&i.ID,
@@ -31,25 +32,36 @@ func (q *Queries) CreateProperty(ctx context.Context, arg CreatePropertyParams) 
 		&i.Address,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const deleteProperty = `-- name: DeleteProperty :exec
-DELETE FROM properties WHERE id = $1
+DELETE FROM properties WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) DeleteProperty(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteProperty, id)
+type DeletePropertyParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteProperty(ctx context.Context, arg DeletePropertyParams) error {
+	_, err := q.db.Exec(ctx, deleteProperty, arg.ID, arg.UserID)
 	return err
 }
 
 const getProperty = `-- name: GetProperty :one
-SELECT id, name, address, created_at, updated_at FROM properties WHERE id = $1
+SELECT id, name, address, created_at, updated_at, user_id FROM properties WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) GetProperty(ctx context.Context, id pgtype.UUID) (Property, error) {
-	row := q.db.QueryRow(ctx, getProperty, id)
+type GetPropertyParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (Property, error) {
+	row := q.db.QueryRow(ctx, getProperty, arg.ID, arg.UserID)
 	var i Property
 	err := row.Scan(
 		&i.ID,
@@ -57,16 +69,17 @@ func (q *Queries) GetProperty(ctx context.Context, id pgtype.UUID) (Property, er
 		&i.Address,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const listProperties = `-- name: ListProperties :many
-SELECT id, name, address, created_at, updated_at FROM properties ORDER BY created_at DESC
+SELECT id, name, address, created_at, updated_at, user_id FROM properties WHERE user_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListProperties(ctx context.Context) ([]Property, error) {
-	rows, err := q.db.Query(ctx, listProperties)
+func (q *Queries) ListProperties(ctx context.Context, userID pgtype.UUID) ([]Property, error) {
+	rows, err := q.db.Query(ctx, listProperties, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +93,7 @@ func (q *Queries) ListProperties(ctx context.Context) ([]Property, error) {
 			&i.Address,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -94,18 +108,24 @@ func (q *Queries) ListProperties(ctx context.Context) ([]Property, error) {
 const updateProperty = `-- name: UpdateProperty :one
 UPDATE properties
 SET name = $2, address = $3, updated_at = NOW()
-WHERE id = $1
-RETURNING id, name, address, created_at, updated_at
+WHERE id = $1 AND user_id = $4
+RETURNING id, name, address, created_at, updated_at, user_id
 `
 
 type UpdatePropertyParams struct {
 	ID      pgtype.UUID `json:"id"`
 	Name    string      `json:"name"`
 	Address string      `json:"address"`
+	UserID  pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) (Property, error) {
-	row := q.db.QueryRow(ctx, updateProperty, arg.ID, arg.Name, arg.Address)
+	row := q.db.QueryRow(ctx, updateProperty,
+		arg.ID,
+		arg.Name,
+		arg.Address,
+		arg.UserID,
+	)
 	var i Property
 	err := row.Scan(
 		&i.ID,
@@ -113,6 +133,23 @@ func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) 
 		&i.Address,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.UserID,
 	)
 	return i, err
+}
+
+const verifyPropertyOwnership = `-- name: VerifyPropertyOwnership :one
+SELECT EXISTS(SELECT 1 FROM properties WHERE id = $1 AND user_id = $2)
+`
+
+type VerifyPropertyOwnershipParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) VerifyPropertyOwnership(ctx context.Context, arg VerifyPropertyOwnershipParams) (bool, error) {
+	row := q.db.QueryRow(ctx, verifyPropertyOwnership, arg.ID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

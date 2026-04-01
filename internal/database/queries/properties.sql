@@ -1,19 +1,22 @@
 -- name: ListProperties :many
-SELECT * FROM properties ORDER BY created_at DESC;
+SELECT * FROM properties WHERE user_id = $1 ORDER BY created_at DESC;
 
 -- name: GetProperty :one
-SELECT * FROM properties WHERE id = $1;
+SELECT * FROM properties WHERE id = $1 AND user_id = $2;
 
 -- name: CreateProperty :one
-INSERT INTO properties (name, address)
-VALUES ($1, $2)
+INSERT INTO properties (name, address, user_id)
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: UpdateProperty :one
 UPDATE properties
 SET name = $2, address = $3, updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND user_id = $4
 RETURNING *;
 
 -- name: DeleteProperty :exec
-DELETE FROM properties WHERE id = $1;
+DELETE FROM properties WHERE id = $1 AND user_id = $2;
+
+-- name: VerifyPropertyOwnership :one
+SELECT EXISTS(SELECT 1 FROM properties WHERE id = $1 AND user_id = $2);

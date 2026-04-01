@@ -13,20 +13,26 @@ import (
 )
 
 type DashboardService struct {
-	queries *sqlc.Queries
+	queries    *sqlc.Queries
+	exchangeSvc *ExchangeService
 }
 
-func NewDashboardService(q *sqlc.Queries) *DashboardService {
-	return &DashboardService{queries: q}
+func NewDashboardService(q *sqlc.Queries, exchangeSvc *ExchangeService) *DashboardService {
+	return &DashboardService{queries: q, exchangeSvc: exchangeSvc}
 }
 
-func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID pgtype.UUID, month string) (*models.DashboardSummary, error) {
+func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID pgtype.UUID, month string, currency string) (*models.DashboardSummary, error) {
 	startDate, endDate, err := parseMonthRange(month)
 	if err != nil {
 		return nil, err
 	}
 
-	bookingSummary, err := s.queries.GetBookingsSummary(ctx, sqlc.GetBookingsSummaryParams{
+	baseCurrency := s.exchangeSvc.BaseCurrency()
+	if currency != "" {
+		baseCurrency = currency
+	}
+
+	bookingRows, err := s.queries.GetBookingsSummaryByCurrency(ctx, sqlc.GetBookingsSummaryByCurrencyParams{
 		PropertyID: propertyID,
 		StartDate:  startDate,
 		EndDate:    endDate,
@@ -35,7 +41,34 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 		return nil, err
 	}
 
-	expenseRows, err := s.queries.GetExpensesByCategory(ctx, sqlc.GetExpensesByCategoryParams{
+	totalIncome := decimal.Zero
+	platformFees := decimal.Zero
+	netIncome := decimal.Zero
+	bookingsCount := 0
+	totalNights := 0
+
+	for _, row := range bookingRows {
+		currency := row.Currency
+		income, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.TotalIncome), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		fees, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.PlatformFees), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		net, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.NetIncome), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		totalIncome = totalIncome.Add(income)
+		platformFees = platformFees.Add(fees)
+		netIncome = netIncome.Add(net)
+		bookingsCount += int(row.BookingsCount)
+		totalNights += int(row.TotalNights)
+	}
+
+	expenseRows, err := s.queries.GetExpensesByCategoryCurrency(ctx, sqlc.GetExpensesByCategoryCurrencyParams{
 		PropertyID: propertyID,
 		StartDate:  startDate,
 		EndDate:    endDate,
@@ -44,18 +77,60 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 		return nil, err
 	}
 
-	return buildSummary(month, bookingSummary.TotalIncome, bookingSummary.PlatformFees,
-		bookingSummary.NetIncome, int(bookingSummary.BookingsCount),
-		int(bookingSummary.TotalNights), startDate, expenseRows), nil
+	expenses, err := s.aggregateExpenses(ctx, expenseRows, baseCurrency, month)
+	if err != nil {
+		return nil, err
+	}
+
+	pctRows, err := s.queries.GetPercentageExpensesByProperty(ctx, sqlc.GetPercentageExpensesByPropertyParams{
+		PropertyID: propertyID,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.applyPercentageExpenses(pctRows, netIncome, &expenses)
+
+	analytics, err := s.queries.GetBookingAnalyticsByProperty(ctx, sqlc.GetBookingAnalyticsByPropertyParams{
+		PropertyID: propertyID,
+		StartDate:  startDate,
+		EndDate:    endDate,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	taxRules, err := s.queries.ListTaxRulesByProperty(ctx, propertyID)
+	if err != nil {
+		return nil, err
+	}
+
+	profit := netIncome.Sub(expenses.Total)
+	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month)
+
+	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
+		bookingsCount, totalNights, startDate, expenses,
+		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
+	summary.Taxes = taxes
+	summary.TotalTax = totalTax
+	summary.ProfitAfterTax = profit.Sub(totalTax)
+	return summary, nil
 }
 
-func (s *DashboardService) GetOverallDashboard(ctx context.Context, month string) (*models.DashboardSummary, error) {
+func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtype.UUID, month string, currency string) (*models.DashboardSummary, error) {
 	startDate, endDate, err := parseMonthRange(month)
 	if err != nil {
 		return nil, err
 	}
 
-	bookingSummary, err := s.queries.GetAllBookingsSummary(ctx, sqlc.GetAllBookingsSummaryParams{
+	baseCurrency := s.exchangeSvc.BaseCurrency()
+	if currency != "" {
+		baseCurrency = currency
+	}
+
+	bookingRows, err := s.queries.GetAllBookingsSummaryByCurrencyForUser(ctx, sqlc.GetAllBookingsSummaryByCurrencyForUserParams{
+		UserID:    userID,
 		StartDate: startDate,
 		EndDate:   endDate,
 	})
@@ -63,7 +138,35 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, month string
 		return nil, err
 	}
 
-	expenseRows, err := s.queries.GetAllExpensesByCategory(ctx, sqlc.GetAllExpensesByCategoryParams{
+	totalIncome := decimal.Zero
+	platformFees := decimal.Zero
+	netIncome := decimal.Zero
+	bookingsCount := 0
+	totalNights := 0
+
+	for _, row := range bookingRows {
+		currency := row.Currency
+		income, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.TotalIncome), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		fees, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.PlatformFees), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		net, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.NetIncome), currency, baseCurrency, month)
+		if err != nil {
+			return nil, err
+		}
+		totalIncome = totalIncome.Add(income)
+		platformFees = platformFees.Add(fees)
+		netIncome = netIncome.Add(net)
+		bookingsCount += int(row.BookingsCount)
+		totalNights += int(row.TotalNights)
+	}
+
+	expenseRows, err := s.queries.GetAllExpensesByCategoryCurrencyForUser(ctx, sqlc.GetAllExpensesByCategoryCurrencyForUserParams{
+		UserID:    userID,
 		StartDate: startDate,
 		EndDate:   endDate,
 	})
@@ -71,9 +174,117 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, month string
 		return nil, err
 	}
 
-	return buildSummary(month, bookingSummary.TotalIncome, bookingSummary.PlatformFees,
-		bookingSummary.NetIncome, int(bookingSummary.BookingsCount),
-		int(bookingSummary.TotalNights), startDate, expenseRows), nil
+	expenses, err := s.aggregateUserExpenses(ctx, expenseRows, baseCurrency, month)
+	if err != nil {
+		return nil, err
+	}
+
+	pctRows, err := s.queries.GetAllPercentageExpensesForUser(ctx, sqlc.GetAllPercentageExpensesForUserParams{
+		UserID:    userID,
+		StartDate: startDate,
+		EndDate:   endDate,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.applyPercentageExpenses(pctRows, netIncome, &expenses)
+
+	analytics, err := s.queries.GetBookingAnalyticsForUser(ctx, sqlc.GetBookingAnalyticsForUserParams{
+		UserID:    userID,
+		StartDate: startDate,
+		EndDate:   endDate,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	taxRules, err := s.queries.ListTaxRulesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	profit := netIncome.Sub(expenses.Total)
+	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month)
+
+	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
+		bookingsCount, totalNights, startDate, expenses,
+		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
+	summary.Taxes = taxes
+	summary.TotalTax = totalTax
+	summary.ProfitAfterTax = profit.Sub(totalTax)
+	return summary, nil
+}
+
+func (s *DashboardService) calculateTaxes(ctx context.Context, rules []sqlc.TaxRule, profit decimal.Decimal, baseCurrency, month string) ([]models.TaxEstimate, decimal.Decimal) {
+	hundred := decimal.NewFromInt(100)
+	twelve := decimal.NewFromInt(12)
+	var taxes []models.TaxEstimate
+	totalTax := decimal.Zero
+
+	for _, rule := range rules {
+		var amount decimal.Decimal
+		if rule.Type == "percentage" {
+			pct := numericToDecimal(rule.Percentage)
+			amount = pct.Div(hundred).Mul(profit).Round(2)
+		} else {
+			fixedAnnual := numericToDecimal(rule.FixedAmount)
+			monthly := fixedAnnual.Div(twelve).Round(2)
+			converted, err := s.exchangeSvc.Convert(ctx, monthly, rule.Currency, baseCurrency, month)
+			if err != nil {
+				amount = monthly
+			} else {
+				amount = converted
+			}
+		}
+		if amount.IsPositive() {
+			taxes = append(taxes, models.TaxEstimate{
+				Name:   rule.Name,
+				Amount: amount,
+			})
+			totalTax = totalTax.Add(amount)
+		}
+	}
+
+	if taxes == nil {
+		taxes = []models.TaxEstimate{}
+	}
+	return taxes, totalTax
+}
+
+func (s *DashboardService) aggregateExpenses(ctx context.Context, rows []sqlc.GetExpensesByCategoryCurrencyRow, baseCurrency, month string) (models.ExpenseBreakdown, error) {
+	expenses := models.ExpenseBreakdown{}
+	totalExpenses := decimal.Zero
+
+	for _, row := range rows {
+		amount := numericToDecimal(row.Total)
+		converted, err := s.exchangeSvc.Convert(ctx, amount, row.Currency, baseCurrency, month)
+		if err != nil {
+			return expenses, err
+		}
+		totalExpenses = totalExpenses.Add(converted)
+		setCategoryDecimal(&expenses, row.Category, converted)
+	}
+
+	expenses.Total = totalExpenses
+	return expenses, nil
+}
+
+func (s *DashboardService) aggregateUserExpenses(ctx context.Context, rows []sqlc.GetAllExpensesByCategoryCurrencyForUserRow, baseCurrency, month string) (models.ExpenseBreakdown, error) {
+	expenses := models.ExpenseBreakdown{}
+	totalExpenses := decimal.Zero
+
+	for _, row := range rows {
+		amount := numericToDecimal(row.Total)
+		converted, err := s.exchangeSvc.Convert(ctx, amount, row.Currency, baseCurrency, month)
+		if err != nil {
+			return expenses, err
+		}
+		totalExpenses = totalExpenses.Add(converted)
+		setCategoryDecimal(&expenses, row.Category, converted)
+	}
+
+	expenses.Total = totalExpenses
+	return expenses, nil
 }
 
 func parseMonthRange(month string) (pgtype.Date, pgtype.Date, error) {
@@ -86,36 +297,11 @@ func parseMonthRange(month string) (pgtype.Date, pgtype.Date, error) {
 	return startDate, endDate, nil
 }
 
-type expenseCategoryRow interface {
-	GetCategory() string
-	GetTotal() pgtype.Numeric
-}
+func buildSummary(month, currency string, totalIncome, platformFees, netIncome decimal.Decimal,
+	bookingsCount, totalNights int, startDate pgtype.Date, expenses models.ExpenseBreakdown,
+	avgLeadTimeDays float64, cancelledCount, totalBookingCount int) *models.DashboardSummary {
 
-func buildSummary(month string, totalIncome, platformFees, netIncome pgtype.Numeric,
-	bookingsCount, totalNights int, startDate pgtype.Date, expenseRows interface{}) *models.DashboardSummary {
-
-	expenses := models.ExpenseBreakdown{}
-	totalExpenses := 0.0
-
-	switch rows := expenseRows.(type) {
-	case []sqlc.GetExpensesByCategoryRow:
-		for _, row := range rows {
-			val := numericToFloat(row.Total)
-			totalExpenses += val
-			setCategoryValue(&expenses, row.Category, val)
-		}
-	case []sqlc.GetAllExpensesByCategoryRow:
-		for _, row := range rows {
-			val := numericToFloat(row.Total)
-			totalExpenses += val
-			setCategoryValue(&expenses, row.Category, val)
-		}
-	}
-
-	expenses.Total = floatToDecimal(totalExpenses)
-
-	netIncomeFloat := numericToFloat(netIncome)
-	profit := netIncomeFloat - totalExpenses
+	profit := netIncome.Sub(expenses.Total)
 
 	daysInMonth := startDate.Time.AddDate(0, 1, 0).Sub(startDate.Time).Hours() / 24
 	occupancyRate := 0.0
@@ -123,33 +309,74 @@ func buildSummary(month string, totalIncome, platformFees, netIncome pgtype.Nume
 		occupancyRate = math.Min(float64(totalNights)/daysInMonth, 1.0)
 	}
 
+	// ADR = gross income / total nights
+	adr := decimal.Zero
+	if totalNights > 0 {
+		adr = totalIncome.Div(decimal.NewFromInt(int64(totalNights))).Round(2)
+	}
+
+	// RevPAR = gross income / days in month
+	revpar := decimal.Zero
+	if daysInMonth > 0 {
+		revpar = totalIncome.Div(decimal.NewFromFloat(daysInMonth)).Round(2)
+	}
+
+	// Avg stay length = total nights / bookings count (non-cancelled)
+	avgStayLength := 0.0
+	if bookingsCount > 0 {
+		avgStayLength = math.Round(float64(totalNights)/float64(bookingsCount)*10) / 10
+	}
+
+	// Cancellation rate = cancelled / total bookings (including cancelled)
+	cancellationRate := 0.0
+	if totalBookingCount > 0 {
+		cancellationRate = math.Round(float64(cancelledCount)/float64(totalBookingCount)*1000) / 1000
+	}
+
 	return &models.DashboardSummary{
-		Month:         month,
-		TotalIncome:   numericToDecimal(totalIncome),
-		PlatformFees:  numericToDecimal(platformFees),
-		NetIncome:     numericToDecimal(netIncome),
-		Expenses:      expenses,
-		Profit:        floatToDecimal(profit),
-		OccupancyRate: math.Round(occupancyRate*100) / 100,
-		BookingsCount: bookingsCount,
+		Month:            month,
+		Currency:         currency,
+		TotalIncome:      totalIncome,
+		PlatformFees:     platformFees,
+		NetIncome:        netIncome,
+		Expenses:         expenses,
+		Profit:           profit,
+		OccupancyRate:    math.Round(occupancyRate*100) / 100,
+		BookingsCount:    bookingsCount,
+		ADR:              adr,
+		RevPAR:           revpar,
+		AvgStayLength:    avgStayLength,
+		AvgLeadTimeDays:  math.Round(avgLeadTimeDays*10) / 10,
+		CancellationRate: cancellationRate,
 	}
 }
 
-func setCategoryValue(expenses *models.ExpenseBreakdown, category string, value float64) {
-	d := floatToDecimal(value)
+func setCategoryDecimal(expenses *models.ExpenseBreakdown, category string, value decimal.Decimal) {
 	switch category {
 	case "electricity":
-		expenses.Electricity = d
+		expenses.Electricity = expenses.Electricity.Add(value)
 	case "heating":
-		expenses.Heating = d
+		expenses.Heating = expenses.Heating.Add(value)
 	case "water":
-		expenses.Water = d
+		expenses.Water = expenses.Water.Add(value)
 	case "maintenance":
-		expenses.Maintenance = d
+		expenses.Maintenance = expenses.Maintenance.Add(value)
 	case "cleaning":
-		expenses.Cleaning = d
+		expenses.Cleaning = expenses.Cleaning.Add(value)
 	case "other":
-		expenses.Other = d
+		expenses.Other = expenses.Other.Add(value)
+	case "partner_payout":
+		expenses.PartnerPayout = expenses.PartnerPayout.Add(value)
+	}
+}
+
+func (s *DashboardService) applyPercentageExpenses(rows []sqlc.Expense, netIncome decimal.Decimal, expenses *models.ExpenseBreakdown) {
+	hundred := decimal.NewFromInt(100)
+	for _, row := range rows {
+		pct := numericToDecimal(row.Percentage)
+		amount := pct.Div(hundred).Mul(netIncome).Round(2)
+		setCategoryDecimal(expenses, row.Category, amount)
+		expenses.Total = expenses.Total.Add(amount)
 	}
 }
 
@@ -163,8 +390,4 @@ func numericToFloat(n pgtype.Numeric) float64 {
 
 func numericToDecimal(n pgtype.Numeric) decimal.Decimal {
 	return decimal.NewFromFloat(numericToFloat(n))
-}
-
-func floatToDecimal(f float64) decimal.Decimal {
-	return decimal.NewFromFloat(f)
 }

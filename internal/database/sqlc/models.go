@@ -23,18 +23,83 @@ type Booking struct {
 	Currency          string             `json:"currency"`
 	Status            string             `json:"status"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Price             pgtype.Numeric     `json:"price"`
 }
 
 type Expense struct {
-	ID          pgtype.UUID        `json:"id"`
-	PropertyID  pgtype.UUID        `json:"property_id"`
-	Category    string             `json:"category"`
-	Description string             `json:"description"`
-	Amount      pgtype.Numeric     `json:"amount"`
-	Currency    string             `json:"currency"`
-	Date        pgtype.Date        `json:"date"`
-	Recurring   bool               `json:"recurring"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID           pgtype.UUID        `json:"id"`
+	PropertyID   pgtype.UUID        `json:"property_id"`
+	Category     string             `json:"category"`
+	Description  string             `json:"description"`
+	Amount       pgtype.Numeric     `json:"amount"`
+	Currency     string             `json:"currency"`
+	Date         pgtype.Date        `json:"date"`
+	Recurring    bool               `json:"recurring"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	IsPercentage bool               `json:"is_percentage"`
+	Percentage   pgtype.Numeric     `json:"percentage"`
+}
+
+type Integration struct {
+	ID            pgtype.UUID        `json:"id"`
+	UserID        pgtype.UUID        `json:"user_id"`
+	Platform      string             `json:"platform"`
+	Credentials   []byte             `json:"credentials"`
+	Enabled       bool               `json:"enabled"`
+	LastSyncedAt  pgtype.Timestamptz `json:"last_synced_at"`
+	LastSyncError pgtype.Text        `json:"last_sync_error"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type InventoryItem struct {
+	ID             pgtype.UUID        `json:"id"`
+	PropertyID     pgtype.UUID        `json:"property_id"`
+	Name           string             `json:"name"`
+	Category       string             `json:"category"`
+	Quantity       int32              `json:"quantity"`
+	AcquiredDate   pgtype.Date        `json:"acquired_date"`
+	LifetimeMonths int32              `json:"lifetime_months"`
+	Notes          string             `json:"notes"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type Invoice struct {
+	ID                    pgtype.UUID        `json:"id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	BookingID             pgtype.UUID        `json:"booking_id"`
+	InvoiceNumber         int32              `json:"invoice_number"`
+	InvoiceSeries         string             `json:"invoice_series"`
+	IssueDate             pgtype.Date        `json:"issue_date"`
+	DueDate               pgtype.Date        `json:"due_date"`
+	SellerLegalName       string             `json:"seller_legal_name"`
+	SellerCui             string             `json:"seller_cui"`
+	SellerCnp             string             `json:"seller_cnp"`
+	SellerTradeRegisterNr string             `json:"seller_trade_register_nr"`
+	SellerStreet          string             `json:"seller_street"`
+	SellerCity            string             `json:"seller_city"`
+	SellerCounty          string             `json:"seller_county"`
+	SellerPostalCode      string             `json:"seller_postal_code"`
+	SellerCountryCode     string             `json:"seller_country_code"`
+	SellerVatRegistered   bool               `json:"seller_vat_registered"`
+	BuyerLegalName        string             `json:"buyer_legal_name"`
+	BuyerCui              string             `json:"buyer_cui"`
+	BuyerTradeRegisterNr  string             `json:"buyer_trade_register_nr"`
+	BuyerStreet           string             `json:"buyer_street"`
+	BuyerCity             string             `json:"buyer_city"`
+	BuyerCounty           string             `json:"buyer_county"`
+	BuyerPostalCode       string             `json:"buyer_postal_code"`
+	BuyerCountryCode      string             `json:"buyer_country_code"`
+	BuyerVatRegistered    bool               `json:"buyer_vat_registered"`
+	Currency              string             `json:"currency"`
+	NetAmount             pgtype.Numeric     `json:"net_amount"`
+	TaxAmount             pgtype.Numeric     `json:"tax_amount"`
+	GrossAmount           pgtype.Numeric     `json:"gross_amount"`
+	TaxPercent            pgtype.Numeric     `json:"tax_percent"`
+	Description           string             `json:"description"`
+	Nights                int32              `json:"nights"`
+	XmlContent            string             `json:"xml_content"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 }
 
 type Property struct {
@@ -43,4 +108,51 @@ type Property struct {
 	Address   string             `json:"address"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UserID    pgtype.UUID        `json:"user_id"`
+}
+
+type PropertyMapping struct {
+	ID            pgtype.UUID        `json:"id"`
+	IntegrationID pgtype.UUID        `json:"integration_id"`
+	PropertyID    pgtype.UUID        `json:"property_id"`
+	ExternalID    string             `json:"external_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type SellerProfile struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	LegalName       string             `json:"legal_name"`
+	Street          string             `json:"street"`
+	City            string             `json:"city"`
+	County          string             `json:"county"`
+	PostalCode      string             `json:"postal_code"`
+	CountryCode     string             `json:"country_code"`
+	Cui             string             `json:"cui"`
+	Cnp             string             `json:"cnp"`
+	TradeRegisterNr string             `json:"trade_register_nr"`
+	VatRegistered   bool               `json:"vat_registered"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type TaxRule struct {
+	ID          pgtype.UUID        `json:"id"`
+	PropertyID  pgtype.UUID        `json:"property_id"`
+	Name        string             `json:"name"`
+	Type        string             `json:"type"`
+	Percentage  pgtype.Numeric     `json:"percentage"`
+	FixedAmount pgtype.Numeric     `json:"fixed_amount"`
+	Currency    string             `json:"currency"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type User struct {
+	ID           pgtype.UUID        `json:"id"`
+	Email        string             `json:"email"`
+	PasswordHash pgtype.Text        `json:"password_hash"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	GoogleID     pgtype.Text        `json:"google_id"`
+	Name         string             `json:"name"`
+	AvatarUrl    string             `json:"avatar_url"`
 }

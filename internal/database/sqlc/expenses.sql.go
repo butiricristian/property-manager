@@ -12,19 +12,21 @@ import (
 )
 
 const createExpense = `-- name: CreateExpense :one
-INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at
+INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage
 `
 
 type CreateExpenseParams struct {
-	PropertyID  pgtype.UUID    `json:"property_id"`
-	Category    string         `json:"category"`
-	Description string         `json:"description"`
-	Amount      pgtype.Numeric `json:"amount"`
-	Currency    string         `json:"currency"`
-	Date        pgtype.Date    `json:"date"`
-	Recurring   bool           `json:"recurring"`
+	PropertyID   pgtype.UUID    `json:"property_id"`
+	Category     string         `json:"category"`
+	Description  string         `json:"description"`
+	Amount       pgtype.Numeric `json:"amount"`
+	Currency     string         `json:"currency"`
+	Date         pgtype.Date    `json:"date"`
+	Recurring    bool           `json:"recurring"`
+	IsPercentage bool           `json:"is_percentage"`
+	Percentage   pgtype.Numeric `json:"percentage"`
 }
 
 func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (Expense, error) {
@@ -36,6 +38,8 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 		arg.Currency,
 		arg.Date,
 		arg.Recurring,
+		arg.IsPercentage,
+		arg.Percentage,
 	)
 	var i Expense
 	err := row.Scan(
@@ -48,6 +52,8 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 		&i.Date,
 		&i.Recurring,
 		&i.CreatedAt,
+		&i.IsPercentage,
+		&i.Percentage,
 	)
 	return i, err
 }
@@ -61,36 +67,176 @@ func (q *Queries) DeleteExpense(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const getAllExpensesByCategory = `-- name: GetAllExpensesByCategory :many
+const getAllExpensesByCategoryCurrency = `-- name: GetAllExpensesByCategoryCurrency :many
 SELECT
     category,
+    currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE date >= $1::date
   AND date < $2::date
-GROUP BY category
+  AND is_percentage = false
+GROUP BY category, currency
 `
 
-type GetAllExpensesByCategoryParams struct {
+type GetAllExpensesByCategoryCurrencyParams struct {
 	StartDate pgtype.Date `json:"start_date"`
 	EndDate   pgtype.Date `json:"end_date"`
 }
 
-type GetAllExpensesByCategoryRow struct {
+type GetAllExpensesByCategoryCurrencyRow struct {
 	Category string         `json:"category"`
+	Currency string         `json:"currency"`
 	Total    pgtype.Numeric `json:"total"`
 }
 
-func (q *Queries) GetAllExpensesByCategory(ctx context.Context, arg GetAllExpensesByCategoryParams) ([]GetAllExpensesByCategoryRow, error) {
-	rows, err := q.db.Query(ctx, getAllExpensesByCategory, arg.StartDate, arg.EndDate)
+func (q *Queries) GetAllExpensesByCategoryCurrency(ctx context.Context, arg GetAllExpensesByCategoryCurrencyParams) ([]GetAllExpensesByCategoryCurrencyRow, error) {
+	rows, err := q.db.Query(ctx, getAllExpensesByCategoryCurrency, arg.StartDate, arg.EndDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GetAllExpensesByCategoryRow{}
+	items := []GetAllExpensesByCategoryCurrencyRow{}
 	for rows.Next() {
-		var i GetAllExpensesByCategoryRow
-		if err := rows.Scan(&i.Category, &i.Total); err != nil {
+		var i GetAllExpensesByCategoryCurrencyRow
+		if err := rows.Scan(&i.Category, &i.Currency, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllExpensesByCategoryCurrencyForUser = `-- name: GetAllExpensesByCategoryCurrencyForUser :many
+SELECT
+    e.category,
+    e.currency,
+    COALESCE(SUM(e.amount), 0)::DECIMAL(10,2) AS total
+FROM expenses e
+JOIN properties p ON p.id = e.property_id
+WHERE p.user_id = $1
+  AND e.date >= $2::date
+  AND e.date < $3::date
+  AND e.is_percentage = false
+GROUP BY e.category, e.currency
+`
+
+type GetAllExpensesByCategoryCurrencyForUserParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+}
+
+type GetAllExpensesByCategoryCurrencyForUserRow struct {
+	Category string         `json:"category"`
+	Currency string         `json:"currency"`
+	Total    pgtype.Numeric `json:"total"`
+}
+
+func (q *Queries) GetAllExpensesByCategoryCurrencyForUser(ctx context.Context, arg GetAllExpensesByCategoryCurrencyForUserParams) ([]GetAllExpensesByCategoryCurrencyForUserRow, error) {
+	rows, err := q.db.Query(ctx, getAllExpensesByCategoryCurrencyForUser, arg.UserID, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAllExpensesByCategoryCurrencyForUserRow{}
+	for rows.Next() {
+		var i GetAllExpensesByCategoryCurrencyForUserRow
+		if err := rows.Scan(&i.Category, &i.Currency, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllPercentageExpenses = `-- name: GetAllPercentageExpenses :many
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
+WHERE date >= $1::date
+  AND date < $2::date
+  AND is_percentage = true
+`
+
+type GetAllPercentageExpensesParams struct {
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+}
+
+func (q *Queries) GetAllPercentageExpenses(ctx context.Context, arg GetAllPercentageExpensesParams) ([]Expense, error) {
+	rows, err := q.db.Query(ctx, getAllPercentageExpenses, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Expense{}
+	for rows.Next() {
+		var i Expense
+		if err := rows.Scan(
+			&i.ID,
+			&i.PropertyID,
+			&i.Category,
+			&i.Description,
+			&i.Amount,
+			&i.Currency,
+			&i.Date,
+			&i.Recurring,
+			&i.CreatedAt,
+			&i.IsPercentage,
+			&i.Percentage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllPercentageExpensesForUser = `-- name: GetAllPercentageExpensesForUser :many
+SELECT e.id, e.property_id, e.category, e.description, e.amount, e.currency, e.date, e.recurring, e.created_at, e.is_percentage, e.percentage FROM expenses e
+JOIN properties p ON p.id = e.property_id
+WHERE p.user_id = $1
+  AND e.date >= $2::date
+  AND e.date < $3::date
+  AND e.is_percentage = true
+`
+
+type GetAllPercentageExpensesForUserParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+}
+
+func (q *Queries) GetAllPercentageExpensesForUser(ctx context.Context, arg GetAllPercentageExpensesForUserParams) ([]Expense, error) {
+	rows, err := q.db.Query(ctx, getAllPercentageExpensesForUser, arg.UserID, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Expense{}
+	for rows.Next() {
+		var i Expense
+		if err := rows.Scan(
+			&i.ID,
+			&i.PropertyID,
+			&i.Category,
+			&i.Description,
+			&i.Amount,
+			&i.Currency,
+			&i.Date,
+			&i.Recurring,
+			&i.CreatedAt,
+			&i.IsPercentage,
+			&i.Percentage,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -102,7 +248,7 @@ func (q *Queries) GetAllExpensesByCategory(ctx context.Context, arg GetAllExpens
 }
 
 const getExpense = `-- name: GetExpense :one
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at FROM expenses WHERE id = $1
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses WHERE id = $1
 `
 
 func (q *Queries) GetExpense(ctx context.Context, id pgtype.UUID) (Expense, error) {
@@ -118,42 +264,93 @@ func (q *Queries) GetExpense(ctx context.Context, id pgtype.UUID) (Expense, erro
 		&i.Date,
 		&i.Recurring,
 		&i.CreatedAt,
+		&i.IsPercentage,
+		&i.Percentage,
 	)
 	return i, err
 }
 
-const getExpensesByCategory = `-- name: GetExpensesByCategory :many
+const getExpensesByCategoryCurrency = `-- name: GetExpensesByCategoryCurrency :many
 SELECT
     category,
+    currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE property_id = $1
   AND date >= $2::date
   AND date < $3::date
-GROUP BY category
+  AND is_percentage = false
+GROUP BY category, currency
 `
 
-type GetExpensesByCategoryParams struct {
+type GetExpensesByCategoryCurrencyParams struct {
 	PropertyID pgtype.UUID `json:"property_id"`
 	StartDate  pgtype.Date `json:"start_date"`
 	EndDate    pgtype.Date `json:"end_date"`
 }
 
-type GetExpensesByCategoryRow struct {
+type GetExpensesByCategoryCurrencyRow struct {
 	Category string         `json:"category"`
+	Currency string         `json:"currency"`
 	Total    pgtype.Numeric `json:"total"`
 }
 
-func (q *Queries) GetExpensesByCategory(ctx context.Context, arg GetExpensesByCategoryParams) ([]GetExpensesByCategoryRow, error) {
-	rows, err := q.db.Query(ctx, getExpensesByCategory, arg.PropertyID, arg.StartDate, arg.EndDate)
+func (q *Queries) GetExpensesByCategoryCurrency(ctx context.Context, arg GetExpensesByCategoryCurrencyParams) ([]GetExpensesByCategoryCurrencyRow, error) {
+	rows, err := q.db.Query(ctx, getExpensesByCategoryCurrency, arg.PropertyID, arg.StartDate, arg.EndDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []GetExpensesByCategoryRow{}
+	items := []GetExpensesByCategoryCurrencyRow{}
 	for rows.Next() {
-		var i GetExpensesByCategoryRow
-		if err := rows.Scan(&i.Category, &i.Total); err != nil {
+		var i GetExpensesByCategoryCurrencyRow
+		if err := rows.Scan(&i.Category, &i.Currency, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPercentageExpensesByProperty = `-- name: GetPercentageExpensesByProperty :many
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
+WHERE property_id = $1
+  AND date >= $2::date
+  AND date < $3::date
+  AND is_percentage = true
+`
+
+type GetPercentageExpensesByPropertyParams struct {
+	PropertyID pgtype.UUID `json:"property_id"`
+	StartDate  pgtype.Date `json:"start_date"`
+	EndDate    pgtype.Date `json:"end_date"`
+}
+
+func (q *Queries) GetPercentageExpensesByProperty(ctx context.Context, arg GetPercentageExpensesByPropertyParams) ([]Expense, error) {
+	rows, err := q.db.Query(ctx, getPercentageExpensesByProperty, arg.PropertyID, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Expense{}
+	for rows.Next() {
+		var i Expense
+		if err := rows.Scan(
+			&i.ID,
+			&i.PropertyID,
+			&i.Category,
+			&i.Description,
+			&i.Amount,
+			&i.Currency,
+			&i.Date,
+			&i.Recurring,
+			&i.CreatedAt,
+			&i.IsPercentage,
+			&i.Percentage,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -165,7 +362,7 @@ func (q *Queries) GetExpensesByCategory(ctx context.Context, arg GetExpensesByCa
 }
 
 const listExpensesByProperty = `-- name: ListExpensesByProperty :many
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at FROM expenses
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
 WHERE property_id = $1
   AND date >= $2::date
   AND date < $3::date
@@ -197,6 +394,8 @@ func (q *Queries) ListExpensesByProperty(ctx context.Context, arg ListExpensesBy
 			&i.Date,
 			&i.Recurring,
 			&i.CreatedAt,
+			&i.IsPercentage,
+			&i.Percentage,
 		); err != nil {
 			return nil, err
 		}
@@ -210,19 +409,21 @@ func (q *Queries) ListExpensesByProperty(ctx context.Context, arg ListExpensesBy
 
 const updateExpense = `-- name: UpdateExpense :one
 UPDATE expenses
-SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7
+SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9
 WHERE id = $1
-RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at
+RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage
 `
 
 type UpdateExpenseParams struct {
-	ID          pgtype.UUID    `json:"id"`
-	Category    string         `json:"category"`
-	Description string         `json:"description"`
-	Amount      pgtype.Numeric `json:"amount"`
-	Currency    string         `json:"currency"`
-	Date        pgtype.Date    `json:"date"`
-	Recurring   bool           `json:"recurring"`
+	ID           pgtype.UUID    `json:"id"`
+	Category     string         `json:"category"`
+	Description  string         `json:"description"`
+	Amount       pgtype.Numeric `json:"amount"`
+	Currency     string         `json:"currency"`
+	Date         pgtype.Date    `json:"date"`
+	Recurring    bool           `json:"recurring"`
+	IsPercentage bool           `json:"is_percentage"`
+	Percentage   pgtype.Numeric `json:"percentage"`
 }
 
 func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (Expense, error) {
@@ -234,6 +435,8 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (E
 		arg.Currency,
 		arg.Date,
 		arg.Recurring,
+		arg.IsPercentage,
+		arg.Percentage,
 	)
 	var i Expense
 	err := row.Scan(
@@ -246,6 +449,8 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (E
 		&i.Date,
 		&i.Recurring,
 		&i.CreatedAt,
+		&i.IsPercentage,
+		&i.Percentage,
 	)
 	return i, err
 }

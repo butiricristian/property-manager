@@ -15,9 +15,9 @@ const createBooking = `-- name: CreateBooking :one
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at
+    net_amount, currency, status, price
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price
 `
 
 type CreateBookingParams struct {
@@ -33,6 +33,7 @@ type CreateBookingParams struct {
 	NetAmount         pgtype.Numeric `json:"net_amount"`
 	Currency          string         `json:"currency"`
 	Status            string         `json:"status"`
+	Price             pgtype.Numeric `json:"price"`
 }
 
 func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (Booking, error) {
@@ -49,6 +50,7 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (B
 		arg.NetAmount,
 		arg.Currency,
 		arg.Status,
+		arg.Price,
 	)
 	var i Booking
 	err := row.Scan(
@@ -66,6 +68,7 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (B
 		&i.Currency,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Price,
 	)
 	return i, err
 }
@@ -79,9 +82,11 @@ func (q *Queries) DeleteBooking(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const getAllBookingsSummary = `-- name: GetAllBookingsSummary :one
+const getAllBookingsSummaryByCurrency = `-- name: GetAllBookingsSummaryByCurrency :many
 SELECT
+    currency,
     COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
+    COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
     COALESCE(SUM(platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
     COALESCE(SUM(net_amount), 0)::DECIMAL(10,2) AS net_income,
     COUNT(*)::INT AS bookings_count,
@@ -90,36 +95,116 @@ FROM bookings
 WHERE status != 'cancelled'
   AND check_in >= $1::date
   AND check_in < $2::date
+GROUP BY currency
 `
 
-type GetAllBookingsSummaryParams struct {
+type GetAllBookingsSummaryByCurrencyParams struct {
 	StartDate pgtype.Date `json:"start_date"`
 	EndDate   pgtype.Date `json:"end_date"`
 }
 
-type GetAllBookingsSummaryRow struct {
+type GetAllBookingsSummaryByCurrencyRow struct {
+	Currency      string         `json:"currency"`
 	TotalIncome   pgtype.Numeric `json:"total_income"`
+	TotalPrice    pgtype.Numeric `json:"total_price"`
 	PlatformFees  pgtype.Numeric `json:"platform_fees"`
 	NetIncome     pgtype.Numeric `json:"net_income"`
 	BookingsCount int32          `json:"bookings_count"`
 	TotalNights   int32          `json:"total_nights"`
 }
 
-func (q *Queries) GetAllBookingsSummary(ctx context.Context, arg GetAllBookingsSummaryParams) (GetAllBookingsSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getAllBookingsSummary, arg.StartDate, arg.EndDate)
-	var i GetAllBookingsSummaryRow
-	err := row.Scan(
-		&i.TotalIncome,
-		&i.PlatformFees,
-		&i.NetIncome,
-		&i.BookingsCount,
-		&i.TotalNights,
-	)
-	return i, err
+func (q *Queries) GetAllBookingsSummaryByCurrency(ctx context.Context, arg GetAllBookingsSummaryByCurrencyParams) ([]GetAllBookingsSummaryByCurrencyRow, error) {
+	rows, err := q.db.Query(ctx, getAllBookingsSummaryByCurrency, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAllBookingsSummaryByCurrencyRow{}
+	for rows.Next() {
+		var i GetAllBookingsSummaryByCurrencyRow
+		if err := rows.Scan(
+			&i.Currency,
+			&i.TotalIncome,
+			&i.TotalPrice,
+			&i.PlatformFees,
+			&i.NetIncome,
+			&i.BookingsCount,
+			&i.TotalNights,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllBookingsSummaryByCurrencyForUser = `-- name: GetAllBookingsSummaryByCurrencyForUser :many
+SELECT
+    b.currency,
+    COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
+    COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
+    COALESCE(SUM(b.platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
+    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income,
+    COUNT(*)::INT AS bookings_count,
+    COALESCE(SUM(b.nights), 0)::INT AS total_nights
+FROM bookings b
+JOIN properties p ON p.id = b.property_id
+WHERE p.user_id = $1
+  AND b.status != 'cancelled'
+  AND b.check_in >= $2::date
+  AND b.check_in < $3::date
+GROUP BY b.currency
+`
+
+type GetAllBookingsSummaryByCurrencyForUserParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+}
+
+type GetAllBookingsSummaryByCurrencyForUserRow struct {
+	Currency      string         `json:"currency"`
+	TotalIncome   pgtype.Numeric `json:"total_income"`
+	TotalPrice    pgtype.Numeric `json:"total_price"`
+	PlatformFees  pgtype.Numeric `json:"platform_fees"`
+	NetIncome     pgtype.Numeric `json:"net_income"`
+	BookingsCount int32          `json:"bookings_count"`
+	TotalNights   int32          `json:"total_nights"`
+}
+
+func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, arg GetAllBookingsSummaryByCurrencyForUserParams) ([]GetAllBookingsSummaryByCurrencyForUserRow, error) {
+	rows, err := q.db.Query(ctx, getAllBookingsSummaryByCurrencyForUser, arg.UserID, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetAllBookingsSummaryByCurrencyForUserRow{}
+	for rows.Next() {
+		var i GetAllBookingsSummaryByCurrencyForUserRow
+		if err := rows.Scan(
+			&i.Currency,
+			&i.TotalIncome,
+			&i.TotalPrice,
+			&i.PlatformFees,
+			&i.NetIncome,
+			&i.BookingsCount,
+			&i.TotalNights,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getBooking = `-- name: GetBooking :one
-SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at FROM bookings WHERE id = $1
+SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price FROM bookings WHERE id = $1
 `
 
 func (q *Queries) GetBooking(ctx context.Context, id pgtype.UUID) (Booking, error) {
@@ -140,13 +225,77 @@ func (q *Queries) GetBooking(ctx context.Context, id pgtype.UUID) (Booking, erro
 		&i.Currency,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Price,
 	)
 	return i, err
 }
 
-const getBookingsSummary = `-- name: GetBookingsSummary :one
+const getBookingAnalyticsByProperty = `-- name: GetBookingAnalyticsByProperty :one
 SELECT
+    COALESCE(AVG(b.check_in - b.created_at::date), 0)::FLOAT8 AS avg_lead_time_days,
+    COUNT(*) FILTER (WHERE b.status = 'cancelled')::INT AS cancelled_count,
+    COUNT(*)::INT AS total_count
+FROM bookings b
+WHERE b.property_id = $1
+  AND b.check_in >= $2::date
+  AND b.check_in < $3::date
+`
+
+type GetBookingAnalyticsByPropertyParams struct {
+	PropertyID pgtype.UUID `json:"property_id"`
+	StartDate  pgtype.Date `json:"start_date"`
+	EndDate    pgtype.Date `json:"end_date"`
+}
+
+type GetBookingAnalyticsByPropertyRow struct {
+	AvgLeadTimeDays float64 `json:"avg_lead_time_days"`
+	CancelledCount  int32   `json:"cancelled_count"`
+	TotalCount      int32   `json:"total_count"`
+}
+
+func (q *Queries) GetBookingAnalyticsByProperty(ctx context.Context, arg GetBookingAnalyticsByPropertyParams) (GetBookingAnalyticsByPropertyRow, error) {
+	row := q.db.QueryRow(ctx, getBookingAnalyticsByProperty, arg.PropertyID, arg.StartDate, arg.EndDate)
+	var i GetBookingAnalyticsByPropertyRow
+	err := row.Scan(&i.AvgLeadTimeDays, &i.CancelledCount, &i.TotalCount)
+	return i, err
+}
+
+const getBookingAnalyticsForUser = `-- name: GetBookingAnalyticsForUser :one
+SELECT
+    COALESCE(AVG(b.check_in - b.created_at::date), 0)::FLOAT8 AS avg_lead_time_days,
+    COUNT(*) FILTER (WHERE b.status = 'cancelled')::INT AS cancelled_count,
+    COUNT(*)::INT AS total_count
+FROM bookings b
+JOIN properties p ON p.id = b.property_id
+WHERE p.user_id = $1
+  AND b.check_in >= $2::date
+  AND b.check_in < $3::date
+`
+
+type GetBookingAnalyticsForUserParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	StartDate pgtype.Date `json:"start_date"`
+	EndDate   pgtype.Date `json:"end_date"`
+}
+
+type GetBookingAnalyticsForUserRow struct {
+	AvgLeadTimeDays float64 `json:"avg_lead_time_days"`
+	CancelledCount  int32   `json:"cancelled_count"`
+	TotalCount      int32   `json:"total_count"`
+}
+
+func (q *Queries) GetBookingAnalyticsForUser(ctx context.Context, arg GetBookingAnalyticsForUserParams) (GetBookingAnalyticsForUserRow, error) {
+	row := q.db.QueryRow(ctx, getBookingAnalyticsForUser, arg.UserID, arg.StartDate, arg.EndDate)
+	var i GetBookingAnalyticsForUserRow
+	err := row.Scan(&i.AvgLeadTimeDays, &i.CancelledCount, &i.TotalCount)
+	return i, err
+}
+
+const getBookingsSummaryByCurrency = `-- name: GetBookingsSummaryByCurrency :many
+SELECT
+    currency,
     COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
+    COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
     COALESCE(SUM(platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
     COALESCE(SUM(net_amount), 0)::DECIMAL(10,2) AS net_income,
     COUNT(*)::INT AS bookings_count,
@@ -156,37 +305,55 @@ WHERE property_id = $1
   AND status != 'cancelled'
   AND check_in >= $2::date
   AND check_in < $3::date
+GROUP BY currency
 `
 
-type GetBookingsSummaryParams struct {
+type GetBookingsSummaryByCurrencyParams struct {
 	PropertyID pgtype.UUID `json:"property_id"`
 	StartDate  pgtype.Date `json:"start_date"`
 	EndDate    pgtype.Date `json:"end_date"`
 }
 
-type GetBookingsSummaryRow struct {
+type GetBookingsSummaryByCurrencyRow struct {
+	Currency      string         `json:"currency"`
 	TotalIncome   pgtype.Numeric `json:"total_income"`
+	TotalPrice    pgtype.Numeric `json:"total_price"`
 	PlatformFees  pgtype.Numeric `json:"platform_fees"`
 	NetIncome     pgtype.Numeric `json:"net_income"`
 	BookingsCount int32          `json:"bookings_count"`
 	TotalNights   int32          `json:"total_nights"`
 }
 
-func (q *Queries) GetBookingsSummary(ctx context.Context, arg GetBookingsSummaryParams) (GetBookingsSummaryRow, error) {
-	row := q.db.QueryRow(ctx, getBookingsSummary, arg.PropertyID, arg.StartDate, arg.EndDate)
-	var i GetBookingsSummaryRow
-	err := row.Scan(
-		&i.TotalIncome,
-		&i.PlatformFees,
-		&i.NetIncome,
-		&i.BookingsCount,
-		&i.TotalNights,
-	)
-	return i, err
+func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBookingsSummaryByCurrencyParams) ([]GetBookingsSummaryByCurrencyRow, error) {
+	rows, err := q.db.Query(ctx, getBookingsSummaryByCurrency, arg.PropertyID, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetBookingsSummaryByCurrencyRow{}
+	for rows.Next() {
+		var i GetBookingsSummaryByCurrencyRow
+		if err := rows.Scan(
+			&i.Currency,
+			&i.TotalIncome,
+			&i.TotalPrice,
+			&i.PlatformFees,
+			&i.NetIncome,
+			&i.BookingsCount,
+			&i.TotalNights,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listBookingsByProperty = `-- name: ListBookingsByProperty :many
-SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at FROM bookings
+SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price FROM bookings
 WHERE property_id = $1
   AND check_in >= $2::date
   AND check_in < $3::date
@@ -223,6 +390,7 @@ func (q *Queries) ListBookingsByProperty(ctx context.Context, arg ListBookingsBy
 			&i.Currency,
 			&i.Status,
 			&i.CreatedAt,
+			&i.Price,
 		); err != nil {
 			return nil, err
 		}
@@ -238,8 +406,8 @@ const upsertBooking = `-- name: UpsertBooking :one
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    net_amount, currency, status, price
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (platform, platform_reference) DO UPDATE SET
     guest_name = EXCLUDED.guest_name,
     check_in = EXCLUDED.check_in,
@@ -249,8 +417,9 @@ ON CONFLICT (platform, platform_reference) DO UPDATE SET
     platform_fee = EXCLUDED.platform_fee,
     net_amount = EXCLUDED.net_amount,
     currency = EXCLUDED.currency,
-    status = EXCLUDED.status
-RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at
+    status = EXCLUDED.status,
+    price = EXCLUDED.price
+RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price
 `
 
 type UpsertBookingParams struct {
@@ -266,6 +435,7 @@ type UpsertBookingParams struct {
 	NetAmount         pgtype.Numeric `json:"net_amount"`
 	Currency          string         `json:"currency"`
 	Status            string         `json:"status"`
+	Price             pgtype.Numeric `json:"price"`
 }
 
 func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (Booking, error) {
@@ -282,6 +452,7 @@ func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (B
 		arg.NetAmount,
 		arg.Currency,
 		arg.Status,
+		arg.Price,
 	)
 	var i Booking
 	err := row.Scan(
@@ -299,6 +470,7 @@ func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (B
 		&i.Currency,
 		&i.Status,
 		&i.CreatedAt,
+		&i.Price,
 	)
 	return i, err
 }
