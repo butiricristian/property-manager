@@ -17,17 +17,26 @@ func NewInventoryHandler(q *sqlc.Queries) *InventoryHandler {
 	return &InventoryHandler{queries: q}
 }
 
-func (h *InventoryHandler) verifyPropertyOwnership(w http.ResponseWriter, r *http.Request, propertyID pgtype.UUID) bool {
+func (h *InventoryHandler) verifyPropertyRead(w http.ResponseWriter, r *http.Request, propertyID pgtype.UUID) bool {
 	userID, err := getUserID(r)
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, "unauthorized")
 		return false
 	}
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyRead(r.Context(), h.queries, propertyID, userID) {
+		respondError(w, http.StatusNotFound, "property not found")
+		return false
+	}
+	return true
+}
+
+func (h *InventoryHandler) verifyPropertyWrite(w http.ResponseWriter, r *http.Request, propertyID pgtype.UUID) bool {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return false
+	}
+	if !verifyPropertyWrite(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "property not found")
 		return false
 	}
@@ -41,7 +50,7 @@ func (h *InventoryHandler) ListByProperty(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if !h.verifyPropertyOwnership(w, r, propertyID) {
+	if !h.verifyPropertyRead(w, r, propertyID) {
 		return
 	}
 
@@ -69,7 +78,7 @@ func (h *InventoryHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.verifyPropertyOwnership(w, r, propertyID) {
+	if !h.verifyPropertyWrite(w, r, propertyID) {
 		return
 	}
 
@@ -129,11 +138,7 @@ func (h *InventoryHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     item.PropertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyWrite(r.Context(), h.queries, item.PropertyID, userID) {
 		respondError(w, http.StatusNotFound, "inventory item not found")
 		return
 	}
@@ -185,11 +190,7 @@ func (h *InventoryHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     item.PropertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyWrite(r.Context(), h.queries, item.PropertyID, userID) {
 		respondError(w, http.StatusNotFound, "inventory item not found")
 		return
 	}

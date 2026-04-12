@@ -1,8 +1,10 @@
 -- name: ListExpensesByProperty :many
 SELECT * FROM expenses
 WHERE property_id = $1
-  AND date >= @start_date::date
-  AND date < @end_date::date
+  AND (
+    (date >= @start_date::date AND date < @end_date::date)
+    OR (recurring = true AND date < @end_date::date)
+  )
 ORDER BY date DESC;
 
 -- name: GetExpense :one
@@ -29,8 +31,10 @@ SELECT
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE property_id = $1
-  AND date >= @start_date::date
-  AND date < @end_date::date
+  AND (
+    (date >= @start_date::date AND date < @end_date::date)
+    OR (recurring = true AND date < @end_date::date)
+  )
   AND is_percentage = false
 GROUP BY category, currency;
 
@@ -40,8 +44,10 @@ SELECT
     currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
-WHERE date >= @start_date::date
-  AND date < @end_date::date
+WHERE (
+    (date >= @start_date::date AND date < @end_date::date)
+    OR (recurring = true AND date < @end_date::date)
+  )
   AND is_percentage = false
 GROUP BY category, currency;
 
@@ -51,30 +57,44 @@ SELECT
     e.currency,
     COALESCE(SUM(e.amount), 0)::DECIMAL(10,2) AS total
 FROM expenses e
-JOIN properties p ON p.id = e.property_id
-WHERE p.user_id = @user_id
-  AND e.date >= @start_date::date
-  AND e.date < @end_date::date
+WHERE e.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
+  )
+  AND (
+    (e.date >= @start_date::date AND e.date < @end_date::date)
+    OR (e.recurring = true AND e.date < @end_date::date)
+  )
   AND e.is_percentage = false
 GROUP BY e.category, e.currency;
 
 -- name: GetPercentageExpensesByProperty :many
 SELECT * FROM expenses
 WHERE property_id = $1
-  AND date >= @start_date::date
-  AND date < @end_date::date
+  AND (
+    (date >= @start_date::date AND date < @end_date::date)
+    OR (recurring = true AND date < @end_date::date)
+  )
   AND is_percentage = true;
 
 -- name: GetAllPercentageExpenses :many
 SELECT * FROM expenses
-WHERE date >= @start_date::date
-  AND date < @end_date::date
+WHERE (
+    (date >= @start_date::date AND date < @end_date::date)
+    OR (recurring = true AND date < @end_date::date)
+  )
   AND is_percentage = true;
 
 -- name: GetAllPercentageExpensesForUser :many
 SELECT e.* FROM expenses e
-JOIN properties p ON p.id = e.property_id
-WHERE p.user_id = @user_id
-  AND e.date >= @start_date::date
-  AND e.date < @end_date::date
+WHERE e.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
+  )
+  AND (
+    (e.date >= @start_date::date AND e.date < @end_date::date)
+    OR (e.recurring = true AND e.date < @end_date::date)
+  )
   AND e.is_percentage = true;

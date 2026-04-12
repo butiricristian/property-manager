@@ -29,7 +29,7 @@ func NewExchangeService(baseCurrency string) *ExchangeService {
 		baseCurrency: baseCurrency,
 		cache:        make(map[string]cachedRate),
 		client:       &http.Client{Timeout: 10 * time.Second},
-		ttl:          1 * time.Hour,
+		ttl:          24 * time.Hour,
 	}
 }
 

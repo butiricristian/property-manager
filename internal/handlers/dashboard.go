@@ -29,18 +29,18 @@ func (h *DashboardHandler) PropertyDashboard(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyRead(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "property not found")
 		return
 	}
 
-	month := getMonthParam(r)
+	startDate, endDate, err := getDateRangeParams(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid date range")
+		return
+	}
 	currency := r.URL.Query().Get("currency")
-	summary, err := h.svc.GetPropertyDashboard(r.Context(), propertyID, month, currency)
+	summary, err := h.svc.GetPropertyDashboard(r.Context(), propertyID, startDate, endDate, currency)
 	if err != nil {
 		respondInternalError(w, "failed to get dashboard data", err)
 		return
@@ -55,9 +55,13 @@ func (h *DashboardHandler) OverallDashboard(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	month := getMonthParam(r)
+	startDate, endDate, err := getDateRangeParams(r)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid date range")
+		return
+	}
 	currency := r.URL.Query().Get("currency")
-	summary, err := h.svc.GetOverallDashboard(r.Context(), userID, month, currency)
+	summary, err := h.svc.GetOverallDashboard(r.Context(), userID, startDate, endDate, currency)
 	if err != nil {
 		respondInternalError(w, "failed to get dashboard data", err)
 		return

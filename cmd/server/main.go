@@ -56,6 +56,26 @@ func main() {
 	bgSync.Start()
 	defer bgSync.Stop()
 
+	// Guest cleanup: delete guest accounts older than 7 days
+	guestCleanupDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := queries.DeleteOldGuestUsers(context.Background()); err != nil {
+					log.Printf("guest cleanup error: %v", err)
+				} else {
+					log.Println("guest cleanup completed")
+				}
+			case <-guestCleanupDone:
+				return
+			}
+		}
+	}()
+	defer close(guestCleanupDone)
+
 	anafSvc := services.NewANAFService()
 
 	var billExtractSvc *services.BillExtractService
@@ -102,10 +122,14 @@ func main() {
 	r.Use(middleware.CORS())
 	r.Use(chimiddleware.Recoverer)
 
+	requireFree := middleware.RequireUserType(queries, "free", "paid")
+	requirePaid := middleware.RequireUserType(queries, "paid")
+
 	r.Route("/api", func(r chi.Router) {
 		// Public auth routes
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/guest", authHandler.Guest)
 		r.Get("/auth/google", authHandler.GoogleLogin)
 		r.Get("/auth/google/callback", authHandler.GoogleCallback)
 
@@ -114,6 +138,7 @@ func main() {
 			r.Use(middleware.RequireAuth(jwtSvc))
 
 			r.Get("/auth/me", authHandler.Me)
+			r.Post("/auth/upgrade", authHandler.UpgradeGuest)
 
 			r.Route("/properties", func(r chi.Router) {
 				r.Get("/", propertyHandler.List)
@@ -128,7 +153,9 @@ func main() {
 
 					r.Get("/expenses", expenseHandler.ListByProperty)
 					r.Post("/expenses", expenseHandler.Create)
-					r.Post("/expenses/extract", billExtractHandler.Extract)
+
+					// Paid-only: bill extraction
+					r.With(requirePaid).Post("/expenses/extract", billExtractHandler.Extract)
 
 					r.Post("/import/csv", importHandler.ImportFile)
 
@@ -143,12 +170,18 @@ func main() {
 					r.Post("/inventory", inventoryHandler.Create)
 
 					r.Get("/dashboard", dashboardHandler.PropertyDashboard)
+
+					r.Get("/shares", propertyHandler.ListShares)
+					r.Post("/shares", propertyHandler.CreateShare)
+					r.Delete("/shares/{userId}", propertyHandler.DeleteShare)
 				})
 			})
 
 			r.Delete("/bookings/{id}", bookingHandler.Delete)
-			r.Post("/bookings/{id}/invoice", invoiceHandler.GenerateInvoice)
-			r.Get("/bookings/{id}/invoice", invoiceHandler.GetBookingInvoice)
+
+			// Free+paid only: invoice generation
+			r.With(requireFree).Post("/bookings/{id}/invoice", invoiceHandler.GenerateInvoice)
+			r.With(requireFree).Get("/bookings/{id}/invoice", invoiceHandler.GetBookingInvoice)
 
 			r.Put("/expenses/{id}", expenseHandler.Update)
 			r.Delete("/expenses/{id}", expenseHandler.Delete)
@@ -159,7 +192,9 @@ func main() {
 			r.Put("/tax-rules/{id}", taxRuleHandler.Update)
 			r.Delete("/tax-rules/{id}", taxRuleHandler.Delete)
 
+			// Paid-only: integrations
 			r.Route("/integrations", func(r chi.Router) {
+				r.Use(requirePaid)
 				r.Get("/", integrationHandler.List)
 				r.Post("/", integrationHandler.Create)
 				r.Put("/{id}", integrationHandler.Update)
@@ -167,14 +202,14 @@ func main() {
 				r.Post("/{id}/sync", integrationHandler.Sync)
 			})
 
-			r.Get("/seller-profile", sellerProfileHandler.Get)
-			r.Put("/seller-profile", sellerProfileHandler.Upsert)
+			// Free+paid only: seller profile, ANAF, invoices
+			r.With(requireFree).Get("/seller-profile", sellerProfileHandler.Get)
+			r.With(requireFree).Put("/seller-profile", sellerProfileHandler.Upsert)
+			r.With(requireFree).Post("/anaf/lookup", invoiceHandler.ANAFLookup)
 
-			r.Post("/anaf/lookup", invoiceHandler.ANAFLookup)
-
-			r.Get("/invoices", invoiceHandler.List)
-			r.Get("/invoices/{id}/xml", invoiceHandler.DownloadXML)
-			r.Delete("/invoices/{id}", invoiceHandler.Delete)
+			r.With(requireFree).Get("/invoices", invoiceHandler.List)
+			r.With(requireFree).Get("/invoices/{id}/xml", invoiceHandler.DownloadXML)
+			r.With(requireFree).Delete("/invoices/{id}", invoiceHandler.Delete)
 
 			r.Get("/dashboard", dashboardHandler.OverallDashboard)
 		})

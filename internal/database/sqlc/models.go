@@ -9,21 +9,22 @@ import (
 )
 
 type Booking struct {
-	ID                pgtype.UUID        `json:"id"`
-	PropertyID        pgtype.UUID        `json:"property_id"`
-	Platform          string             `json:"platform"`
-	PlatformReference string             `json:"platform_reference"`
-	GuestName         string             `json:"guest_name"`
-	CheckIn           pgtype.Date        `json:"check_in"`
-	CheckOut          pgtype.Date        `json:"check_out"`
-	Nights            int32              `json:"nights"`
-	GrossAmount       pgtype.Numeric     `json:"gross_amount"`
-	PlatformFee       pgtype.Numeric     `json:"platform_fee"`
-	NetAmount         pgtype.Numeric     `json:"net_amount"`
-	Currency          string             `json:"currency"`
-	Status            string             `json:"status"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	Price             pgtype.Numeric     `json:"price"`
+	ID                   pgtype.UUID        `json:"id"`
+	PropertyID           pgtype.UUID        `json:"property_id"`
+	Platform             string             `json:"platform"`
+	PlatformReference    string             `json:"platform_reference"`
+	GuestName            string             `json:"guest_name"`
+	CheckIn              pgtype.Date        `json:"check_in"`
+	CheckOut             pgtype.Date        `json:"check_out"`
+	Nights               int32              `json:"nights"`
+	GrossAmount          pgtype.Numeric     `json:"gross_amount"`
+	PlatformFee          pgtype.Numeric     `json:"platform_fee"`
+	NetAmount            pgtype.Numeric     `json:"net_amount"`
+	Currency             string             `json:"currency"`
+	Status               string             `json:"status"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	Price                pgtype.Numeric     `json:"price"`
+	EstimatedGrossAmount pgtype.Numeric     `json:"estimated_gross_amount"`
 }
 
 type Expense struct {
@@ -119,6 +120,14 @@ type PropertyMapping struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type PropertyShare struct {
+	ID         pgtype.UUID        `json:"id"`
+	PropertyID pgtype.UUID        `json:"property_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Permission string             `json:"permission"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type SellerProfile struct {
 	ID              pgtype.UUID        `json:"id"`
 	UserID          pgtype.UUID        `json:"user_id"`
@@ -155,4 +164,5 @@ type User struct {
 	GoogleID     pgtype.Text        `json:"google_id"`
 	Name         string             `json:"name"`
 	AvatarUrl    string             `json:"avatar_url"`
+	UserType     string             `json:"user_type"`
 }

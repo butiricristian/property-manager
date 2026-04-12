@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/cristianbutiri/property-manager-v2/internal/auth"
+	"github.com/cristianbutiri/property-manager-v2/internal/database/sqlc"
 )
 
 func Logger(next http.Handler) http.Handler {
@@ -51,6 +52,41 @@ func RequireAuth(jwtSvc *auth.JWTService) func(http.Handler) http.Handler {
 
 			ctx := auth.WithUserID(r.Context(), userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func RequireUserType(queries *sqlc.Queries, allowed ...string) func(http.Handler) http.Handler {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, a := range allowed {
+		allowedSet[a] = true
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := auth.GetUserID(r.Context())
+			if !ok {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+				return
+			}
+
+			userType, err := queries.GetUserType(r.Context(), userID)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "failed to check user type"})
+				return
+			}
+
+			if !allowedSet[userType] {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(map[string]string{"error": "upgrade_required"})
+				return
+			}
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }

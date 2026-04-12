@@ -87,13 +87,13 @@ Return ONLY the JSON object, no other text.`),
 
 func stripMarkdownFences(s string) string {
 	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```json") {
-		s = strings.TrimPrefix(s, "```json")
-	} else if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
+	if after, ok := strings.CutPrefix(s, "```json"); ok {
+		s = after
+	} else if after, ok := strings.CutPrefix(s, "```"); ok {
+		s = after
 	}
-	if strings.HasSuffix(s, "```") {
-		s = strings.TrimSuffix(s, "```")
+	if before, ok := strings.CutSuffix(s, "```"); ok {
+		s = before
 	}
 	return strings.TrimSpace(s)
 }

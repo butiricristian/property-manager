@@ -12,16 +12,16 @@ SELECT * FROM bookings WHERE id = $1;
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status, price
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    net_amount, currency, status, price, estimated_gross_amount
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING *;
 
 -- name: UpsertBooking :one
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status, price
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    net_amount, currency, status, price, estimated_gross_amount
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (platform, platform_reference) DO UPDATE SET
     guest_name = EXCLUDED.guest_name,
     check_in = EXCLUDED.check_in,
@@ -32,7 +32,8 @@ ON CONFLICT (platform, platform_reference) DO UPDATE SET
     net_amount = EXCLUDED.net_amount,
     currency = EXCLUDED.currency,
     status = EXCLUDED.status,
-    price = EXCLUDED.price
+    price = EXCLUDED.price,
+    estimated_gross_amount = COALESCE(EXCLUDED.estimated_gross_amount, bookings.estimated_gross_amount)
 RETURNING *;
 
 -- name: DeleteBooking :exec
@@ -79,8 +80,11 @@ SELECT
     COUNT(*)::INT AS bookings_count,
     COALESCE(SUM(b.nights), 0)::INT AS total_nights
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE p.user_id = @user_id
+WHERE b.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
+  )
   AND b.status != 'cancelled'
   AND b.check_in >= @start_date::date
   AND b.check_in < @end_date::date
@@ -102,7 +106,10 @@ SELECT
     COUNT(*) FILTER (WHERE b.status = 'cancelled')::INT AS cancelled_count,
     COUNT(*)::INT AS total_count
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE p.user_id = @user_id
+WHERE b.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
+  )
   AND b.check_in >= @start_date::date
   AND b.check_in < @end_date::date;

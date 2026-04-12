@@ -90,11 +90,7 @@ func (h *InvoiceHandler) GenerateInvoice(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     booking.PropertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyWrite(r.Context(), h.queries, booking.PropertyID, userID) {
 		respondError(w, http.StatusNotFound, "booking not found")
 		return
 	}

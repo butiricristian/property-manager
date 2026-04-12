@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"math"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
@@ -21,11 +20,8 @@ func NewDashboardService(q *sqlc.Queries, exchangeSvc *ExchangeService) *Dashboa
 	return &DashboardService{queries: q, exchangeSvc: exchangeSvc}
 }
 
-func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID pgtype.UUID, month string, currency string) (*models.DashboardSummary, error) {
-	startDate, endDate, err := parseMonthRange(month)
-	if err != nil {
-		return nil, err
-	}
+func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID pgtype.UUID, startDate, endDate pgtype.Date, currency string) (*models.DashboardSummary, error) {
+	month := startDate.Time.Format("2006-01")
 
 	baseCurrency := s.exchangeSvc.BaseCurrency()
 	if currency != "" {
@@ -107,10 +103,10 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	}
 
 	profit := netIncome.Sub(expenses.Total)
-	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month)
+	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month, startDate, endDate)
 
 	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
-		bookingsCount, totalNights, startDate, expenses,
+		bookingsCount, totalNights, startDate, endDate, expenses,
 		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
 	summary.Taxes = taxes
 	summary.TotalTax = totalTax
@@ -118,11 +114,8 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	return summary, nil
 }
 
-func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtype.UUID, month string, currency string) (*models.DashboardSummary, error) {
-	startDate, endDate, err := parseMonthRange(month)
-	if err != nil {
-		return nil, err
-	}
+func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtype.UUID, startDate, endDate pgtype.Date, currency string) (*models.DashboardSummary, error) {
+	month := startDate.Time.Format("2006-01")
 
 	baseCurrency := s.exchangeSvc.BaseCurrency()
 	if currency != "" {
@@ -204,10 +197,10 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	}
 
 	profit := netIncome.Sub(expenses.Total)
-	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month)
+	taxes, totalTax := s.calculateTaxes(ctx, taxRules, profit, baseCurrency, month, startDate, endDate)
 
 	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
-		bookingsCount, totalNights, startDate, expenses,
+		bookingsCount, totalNights, startDate, endDate, expenses,
 		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
 	summary.Taxes = taxes
 	summary.TotalTax = totalTax
@@ -215,9 +208,19 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	return summary, nil
 }
 
-func (s *DashboardService) calculateTaxes(ctx context.Context, rules []sqlc.TaxRule, profit decimal.Decimal, baseCurrency, month string) ([]models.TaxEstimate, decimal.Decimal) {
+func (s *DashboardService) calculateTaxes(ctx context.Context, rules []sqlc.TaxRule, profit decimal.Decimal, baseCurrency, month string, startDate, endDate pgtype.Date) ([]models.TaxEstimate, decimal.Decimal) {
 	hundred := decimal.NewFromInt(100)
 	twelve := decimal.NewFromInt(12)
+
+	// Calculate number of months in the range for scaling fixed taxes
+	sy, sm, _ := startDate.Time.Date()
+	ey, em, _ := endDate.Time.Date()
+	numMonths := (ey-sy)*12 + int(em) - int(sm)
+	if numMonths < 1 {
+		numMonths = 1
+	}
+	monthsDecimal := decimal.NewFromInt(int64(numMonths))
+
 	var taxes []models.TaxEstimate
 	totalTax := decimal.Zero
 
@@ -229,9 +232,10 @@ func (s *DashboardService) calculateTaxes(ctx context.Context, rules []sqlc.TaxR
 		} else {
 			fixedAnnual := numericToDecimal(rule.FixedAmount)
 			monthly := fixedAnnual.Div(twelve).Round(2)
-			converted, err := s.exchangeSvc.Convert(ctx, monthly, rule.Currency, baseCurrency, month)
+			scaled := monthly.Mul(monthsDecimal)
+			converted, err := s.exchangeSvc.Convert(ctx, scaled, rule.Currency, baseCurrency, month)
 			if err != nil {
-				amount = monthly
+				amount = scaled
 			} else {
 				amount = converted
 			}
@@ -287,23 +291,13 @@ func (s *DashboardService) aggregateUserExpenses(ctx context.Context, rows []sql
 	return expenses, nil
 }
 
-func parseMonthRange(month string) (pgtype.Date, pgtype.Date, error) {
-	t, err := time.Parse("2006-01", month)
-	if err != nil {
-		return pgtype.Date{}, pgtype.Date{}, err
-	}
-	startDate := pgtype.Date{Time: t, Valid: true}
-	endDate := pgtype.Date{Time: t.AddDate(0, 1, 0), Valid: true}
-	return startDate, endDate, nil
-}
-
 func buildSummary(month, currency string, totalIncome, platformFees, netIncome decimal.Decimal,
-	bookingsCount, totalNights int, startDate pgtype.Date, expenses models.ExpenseBreakdown,
+	bookingsCount, totalNights int, startDate, endDate pgtype.Date, expenses models.ExpenseBreakdown,
 	avgLeadTimeDays float64, cancelledCount, totalBookingCount int) *models.DashboardSummary {
 
 	profit := netIncome.Sub(expenses.Total)
 
-	daysInMonth := startDate.Time.AddDate(0, 1, 0).Sub(startDate.Time).Hours() / 24
+	daysInMonth := endDate.Time.Sub(startDate.Time).Hours() / 24
 	occupancyRate := 0.0
 	if daysInMonth > 0 {
 		occupancyRate = math.Min(float64(totalNights)/daysInMonth, 1.0)

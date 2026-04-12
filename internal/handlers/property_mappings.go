@@ -36,11 +36,7 @@ func (h *PropertyMappingHandler) ListByProperty(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyRead(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "Property not found")
 		return
 	}
@@ -83,11 +79,7 @@ func (h *PropertyMappingHandler) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyWrite(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "Property not found")
 		return
 	}
@@ -141,11 +133,7 @@ func (h *PropertyMappingHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyWrite(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "Property not found")
 		return
 	}

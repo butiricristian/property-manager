@@ -37,11 +37,7 @@ func (h *BillExtractHandler) Extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owned, err := h.queries.VerifyPropertyOwnership(r.Context(), sqlc.VerifyPropertyOwnershipParams{
-		ID:     propertyID,
-		UserID: userID,
-	})
-	if err != nil || !owned {
+	if !verifyPropertyRead(r.Context(), h.queries, propertyID, userID) {
 		respondError(w, http.StatusNotFound, "property not found")
 		return
 	}

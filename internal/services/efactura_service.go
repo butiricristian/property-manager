@@ -50,11 +50,11 @@ func GenerateEFacturaXML(data *InvoiceData) ([]byte, error) {
 		XMLNsCac: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
 		XMLNsCbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
 
-		CustomizationID: "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1",
-		ID:              fmt.Sprintf("%s%d", data.InvoiceSeries, data.InvoiceNumber),
-		IssueDate:       data.IssueDate.Format("2006-01-02"),
-		DueDate:         data.DueDate.Format("2006-01-02"),
-		InvoiceTypeCode: 380,
+		CustomizationID:      "urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1",
+		ID:                   fmt.Sprintf("%s%d", data.InvoiceSeries, data.InvoiceNumber),
+		IssueDate:            data.IssueDate.Format("2006-01-02"),
+		DueDate:              data.DueDate.Format("2006-01-02"),
+		InvoiceTypeCode:      380,
 		DocumentCurrencyCode: data.Currency,
 	}
 
@@ -124,20 +124,20 @@ func GenerateEFacturaXML(data *InvoiceData) ([]byte, error) {
 			TaxableAmount: ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.NetAmount)},
 			TaxAmount:     ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.TaxAmount)},
 			TaxCategory: ublTaxCategory{
-				ID:                   taxCategoryID,
-				Percent:              fmt.Sprintf("%.2f", data.TaxPercent),
-				TaxExemptionReason:   taxExemptionReason,
-				TaxScheme:            ublTaxSchemeID{ID: "VAT"},
+				ID:                 taxCategoryID,
+				Percent:            fmt.Sprintf("%.2f", data.TaxPercent),
+				TaxExemptionReason: taxExemptionReason,
+				TaxScheme:          ublTaxSchemeID{ID: "VAT"},
 			},
 		},
 	}
 
 	// Monetary total
 	inv.LegalMonetaryTotal = ublLegalMonetaryTotal{
-		LineExtensionAmount:  ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.NetAmount)},
-		TaxExclusiveAmount:   ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.NetAmount)},
-		TaxInclusiveAmount:   ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.GrossAmount)},
-		PayableAmount:        ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.GrossAmount)},
+		LineExtensionAmount: ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.NetAmount)},
+		TaxExclusiveAmount:  ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.NetAmount)},
+		TaxInclusiveAmount:  ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.GrossAmount)},
+		PayableAmount:       ublAmount{CurrencyID: data.Currency, Value: fmt.Sprintf("%.2f", data.GrossAmount)},
 	}
 
 	// Invoice line
@@ -241,10 +241,10 @@ type ublTaxSubtotal struct {
 }
 
 type ublTaxCategory struct {
-	ID                   string         `xml:"cbc:ID"`
-	Percent              string         `xml:"cbc:Percent"`
-	TaxExemptionReason   string         `xml:"cbc:TaxExemptionReason,omitempty"`
-	TaxScheme            ublTaxSchemeID  `xml:"cac:TaxScheme"`
+	ID                 string         `xml:"cbc:ID"`
+	Percent            string         `xml:"cbc:Percent"`
+	TaxExemptionReason string         `xml:"cbc:TaxExemptionReason,omitempty"`
+	TaxScheme          ublTaxSchemeID `xml:"cac:TaxScheme"`
 }
 
 type ublLegalMonetaryTotal struct {
@@ -265,16 +265,16 @@ type ublQuantity struct {
 }
 
 type ublInvoiceLine struct {
-	ID                  string                 `xml:"cbc:ID"`
-	InvoicedQuantity    ublQuantity            `xml:"cbc:InvoicedQuantity"`
-	LineExtensionAmount ublAmount              `xml:"cbc:LineExtensionAmount"`
-	Item                ublItem                `xml:"cac:Item"`
-	Price               ublPrice               `xml:"cac:Price"`
+	ID                  string      `xml:"cbc:ID"`
+	InvoicedQuantity    ublQuantity `xml:"cbc:InvoicedQuantity"`
+	LineExtensionAmount ublAmount   `xml:"cbc:LineExtensionAmount"`
+	Item                ublItem     `xml:"cac:Item"`
+	Price               ublPrice    `xml:"cac:Price"`
 }
 
 type ublItem struct {
-	Name                  string                    `xml:"cbc:Name"`
-	ClassifiedTaxCategory ublClassifiedTaxCategory  `xml:"cac:ClassifiedTaxCategory"`
+	Name                  string                   `xml:"cbc:Name"`
+	ClassifiedTaxCategory ublClassifiedTaxCategory `xml:"cac:ClassifiedTaxCategory"`
 }
 
 type ublClassifiedTaxCategory struct {
@@ -310,9 +310,7 @@ func formatCountyISO(county, countryCode string) string {
 
 	// Strip existing prefix if present
 	upper := strings.ToUpper(county)
-	if strings.HasPrefix(upper, prefix) {
-		upper = upper[len(prefix):]
-	}
+	upper = strings.TrimPrefix(upper, prefix)
 
 	// If it's a full county name, map it to the ISO code
 	if code, ok := countyNameToISO[upper]; ok {

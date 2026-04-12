@@ -5,8 +5,11 @@ ORDER BY created_at DESC;
 
 -- name: ListTaxRulesForUser :many
 SELECT tr.* FROM tax_rules tr
-JOIN properties p ON p.id = tr.property_id
-WHERE p.user_id = @user_id;
+WHERE tr.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
+);
 
 -- name: GetTaxRule :one
 SELECT * FROM tax_rules WHERE id = $1;

@@ -115,8 +115,11 @@ func (q *Queries) ListTaxRulesByProperty(ctx context.Context, propertyID pgtype.
 
 const listTaxRulesForUser = `-- name: ListTaxRulesForUser :many
 SELECT tr.id, tr.property_id, tr.name, tr.type, tr.percentage, tr.fixed_amount, tr.currency, tr.created_at FROM tax_rules tr
-JOIN properties p ON p.id = tr.property_id
-WHERE p.user_id = $1
+WHERE tr.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = $1
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
+)
 `
 
 func (q *Queries) ListTaxRulesForUser(ctx context.Context, userID pgtype.UUID) ([]TaxRule, error) {

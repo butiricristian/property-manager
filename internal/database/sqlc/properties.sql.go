@@ -74,6 +74,56 @@ func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (Prope
 	return i, err
 }
 
+const listAccessibleProperties = `-- name: ListAccessibleProperties :many
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, 'admin'::text AS permission
+FROM properties p
+WHERE p.user_id = $1
+UNION ALL
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, ps.permission
+FROM properties p
+JOIN property_shares ps ON ps.property_id = p.id
+WHERE ps.user_id = $1
+ORDER BY created_at DESC
+`
+
+type ListAccessiblePropertiesRow struct {
+	ID         pgtype.UUID        `json:"id"`
+	Name       string             `json:"name"`
+	Address    string             `json:"address"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Permission string             `json:"permission"`
+}
+
+func (q *Queries) ListAccessibleProperties(ctx context.Context, userID pgtype.UUID) ([]ListAccessiblePropertiesRow, error) {
+	rows, err := q.db.Query(ctx, listAccessibleProperties, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAccessiblePropertiesRow{}
+	for rows.Next() {
+		var i ListAccessiblePropertiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Address,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UserID,
+			&i.Permission,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProperties = `-- name: ListProperties :many
 SELECT id, name, address, created_at, updated_at, user_id FROM properties WHERE user_id = $1 ORDER BY created_at DESC
 `
@@ -136,6 +186,26 @@ func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) 
 		&i.UserID,
 	)
 	return i, err
+}
+
+const verifyPropertyAccess = `-- name: VerifyPropertyAccess :one
+SELECT EXISTS(
+    SELECT 1 FROM properties p WHERE p.id = $1 AND p.user_id = $2
+    UNION ALL
+    SELECT 1 FROM property_shares ps WHERE ps.property_id = $1 AND ps.user_id = $2
+)
+`
+
+type VerifyPropertyAccessParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) VerifyPropertyAccess(ctx context.Context, arg VerifyPropertyAccessParams) (bool, error) {
+	row := q.db.QueryRow(ctx, verifyPropertyAccess, arg.ID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const verifyPropertyOwnership = `-- name: VerifyPropertyOwnership :one

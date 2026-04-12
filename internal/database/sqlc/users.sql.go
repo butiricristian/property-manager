@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countProperties = `-- name: CountProperties :one
+SELECT count(*) FROM properties WHERE user_id = $1
+`
+
+func (q *Queries) CountProperties(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countProperties, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createGoogleUser = `-- name: CreateGoogleUser :one
 INSERT INTO users (email, google_id, name, avatar_url)
 VALUES ($1, $2, $3, $4)
@@ -50,6 +61,31 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 	return i, err
 }
 
+const createGuestUser = `-- name: CreateGuestUser :one
+INSERT INTO users (email, user_type)
+VALUES ($1, 'guest')
+RETURNING id, email, created_at, user_type
+`
+
+type CreateGuestUserRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UserType  string             `json:"user_type"`
+}
+
+func (q *Queries) CreateGuestUser(ctx context.Context, email string) (CreateGuestUserRow, error) {
+	row := q.db.QueryRow(ctx, createGuestUser, email)
+	var i CreateGuestUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.CreatedAt,
+		&i.UserType,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
@@ -74,8 +110,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const deleteOldGuestUsers = `-- name: DeleteOldGuestUsers :exec
+DELETE FROM users WHERE user_type = 'guest' AND created_at < NOW() - INTERVAL '7 days'
+`
+
+func (q *Queries) DeleteOldGuestUsers(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteOldGuestUsers)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, google_id, name, avatar_url FROM users WHERE email = $1
+SELECT id, email, password_hash, created_at, google_id, name, avatar_url, user_type FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -89,6 +134,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.GoogleID,
 		&i.Name,
 		&i.AvatarUrl,
+		&i.UserType,
 	)
 	return i, err
 }
@@ -119,7 +165,7 @@ func (q *Queries) GetUserByGoogleID(ctx context.Context, googleID pgtype.Text) (
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, created_at, name, avatar_url FROM users WHERE id = $1
+SELECT id, email, created_at, name, avatar_url, user_type FROM users WHERE id = $1
 `
 
 type GetUserByIDRow struct {
@@ -128,6 +174,7 @@ type GetUserByIDRow struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	Name      string             `json:"name"`
 	AvatarUrl string             `json:"avatar_url"`
+	UserType  string             `json:"user_type"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
@@ -139,8 +186,20 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 		&i.CreatedAt,
 		&i.Name,
 		&i.AvatarUrl,
+		&i.UserType,
 	)
 	return i, err
+}
+
+const getUserType = `-- name: GetUserType :one
+SELECT user_type FROM users WHERE id = $1
+`
+
+func (q *Queries) GetUserType(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserType, id)
+	var user_type string
+	err := row.Scan(&user_type)
+	return user_type, err
 }
 
 const linkGoogleAccount = `-- name: LinkGoogleAccount :exec
@@ -162,4 +221,40 @@ func (q *Queries) LinkGoogleAccount(ctx context.Context, arg LinkGoogleAccountPa
 		arg.AvatarUrl,
 	)
 	return err
+}
+
+const upgradeGuestUser = `-- name: UpgradeGuestUser :one
+UPDATE users
+SET email = $2, password_hash = $3, user_type = 'free'
+WHERE id = $1 AND user_type = 'guest'
+RETURNING id, email, created_at, name, avatar_url, user_type
+`
+
+type UpgradeGuestUserParams struct {
+	ID           pgtype.UUID `json:"id"`
+	Email        string      `json:"email"`
+	PasswordHash pgtype.Text `json:"password_hash"`
+}
+
+type UpgradeGuestUserRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Name      string             `json:"name"`
+	AvatarUrl string             `json:"avatar_url"`
+	UserType  string             `json:"user_type"`
+}
+
+func (q *Queries) UpgradeGuestUser(ctx context.Context, arg UpgradeGuestUserParams) (UpgradeGuestUserRow, error) {
+	row := q.db.QueryRow(ctx, upgradeGuestUser, arg.ID, arg.Email, arg.PasswordHash)
+	var i UpgradeGuestUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.CreatedAt,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.UserType,
+	)
+	return i, err
 }

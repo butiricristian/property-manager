@@ -73,8 +73,10 @@ SELECT
     currency,
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
-WHERE date >= $1::date
-  AND date < $2::date
+WHERE (
+    (date >= $1::date AND date < $2::date)
+    OR (recurring = true AND date < $2::date)
+  )
   AND is_percentage = false
 GROUP BY category, currency
 `
@@ -116,10 +118,15 @@ SELECT
     e.currency,
     COALESCE(SUM(e.amount), 0)::DECIMAL(10,2) AS total
 FROM expenses e
-JOIN properties p ON p.id = e.property_id
-WHERE p.user_id = $1
-  AND e.date >= $2::date
-  AND e.date < $3::date
+WHERE e.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = $1
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
+  )
+  AND (
+    (e.date >= $2::date AND e.date < $3::date)
+    OR (e.recurring = true AND e.date < $3::date)
+  )
   AND e.is_percentage = false
 GROUP BY e.category, e.currency
 `
@@ -158,8 +165,10 @@ func (q *Queries) GetAllExpensesByCategoryCurrencyForUser(ctx context.Context, a
 
 const getAllPercentageExpenses = `-- name: GetAllPercentageExpenses :many
 SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
-WHERE date >= $1::date
-  AND date < $2::date
+WHERE (
+    (date >= $1::date AND date < $2::date)
+    OR (recurring = true AND date < $2::date)
+  )
   AND is_percentage = true
 `
 
@@ -202,10 +211,15 @@ func (q *Queries) GetAllPercentageExpenses(ctx context.Context, arg GetAllPercen
 
 const getAllPercentageExpensesForUser = `-- name: GetAllPercentageExpensesForUser :many
 SELECT e.id, e.property_id, e.category, e.description, e.amount, e.currency, e.date, e.recurring, e.created_at, e.is_percentage, e.percentage FROM expenses e
-JOIN properties p ON p.id = e.property_id
-WHERE p.user_id = $1
-  AND e.date >= $2::date
-  AND e.date < $3::date
+WHERE e.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = $1
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
+  )
+  AND (
+    (e.date >= $2::date AND e.date < $3::date)
+    OR (e.recurring = true AND e.date < $3::date)
+  )
   AND e.is_percentage = true
 `
 
@@ -277,8 +291,10 @@ SELECT
     COALESCE(SUM(amount), 0)::DECIMAL(10,2) AS total
 FROM expenses
 WHERE property_id = $1
-  AND date >= $2::date
-  AND date < $3::date
+  AND (
+    (date >= $2::date AND date < $3::date)
+    OR (recurring = true AND date < $3::date)
+  )
   AND is_percentage = false
 GROUP BY category, currency
 `
@@ -318,8 +334,10 @@ func (q *Queries) GetExpensesByCategoryCurrency(ctx context.Context, arg GetExpe
 const getPercentageExpensesByProperty = `-- name: GetPercentageExpensesByProperty :many
 SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
 WHERE property_id = $1
-  AND date >= $2::date
-  AND date < $3::date
+  AND (
+    (date >= $2::date AND date < $3::date)
+    OR (recurring = true AND date < $3::date)
+  )
   AND is_percentage = true
 `
 
@@ -364,8 +382,10 @@ func (q *Queries) GetPercentageExpensesByProperty(ctx context.Context, arg GetPe
 const listExpensesByProperty = `-- name: ListExpensesByProperty :many
 SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
 WHERE property_id = $1
-  AND date >= $2::date
-  AND date < $3::date
+  AND (
+    (date >= $2::date AND date < $3::date)
+    OR (recurring = true AND date < $3::date)
+  )
 ORDER BY date DESC
 `
 

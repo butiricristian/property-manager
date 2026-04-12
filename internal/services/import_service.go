@@ -332,8 +332,15 @@ func getField(row []string, idx int) string {
 }
 
 func parseAmount(s string) float64 {
+	s = strings.TrimSpace(s)
+	// Strip currency codes/symbols (prefix or suffix)
+	for _, code := range []string{"EUR", "USD", "GBP", "RON", "LEI"} {
+		s = strings.TrimPrefix(s, code)
+		s = strings.TrimSuffix(s, code)
+	}
 	s = strings.ReplaceAll(s, " ", "")
 	s = strings.TrimLeft(s, "€$£")
+	s = strings.TrimRight(s, "€$£")
 
 	// Detect format by finding the last separator character.
 	// The last separator is always the decimal separator;
@@ -361,15 +368,21 @@ func parseAmount(s string) float64 {
 func parseBookingComRow(header, row []string, propertyID pgtype.UUID, payouts map[string]PayoutData) (sqlc.UpsertBookingParams, error) {
 	typeIdx := findColumn(header, "type")
 	refIdx := findColumn(header, "reservation number", "booking number", "reservation id", "book number", "reference number")
-	guestIdx := findColumn(header, "booker name", "guest name", "guest")
+	guestIdx := findColumn(header, "booker name", "guest name", "guest name(s)", "guest", "booked by")
 	checkInIdx := findColumn(header, "arrival", "check-in", "checkin")
 	checkOutIdx := findColumn(header, "departure", "check-out", "checkout")
 	amountIdx := findColumn(header, "original amount", "total payment", "total price", "price", "amount", "total")
 	priceIdx := findColumn(header, "final amount")
 	commissionIdx := findColumn(header, "commission", "commission amount")
+	commissionPctIdx := findColumn(header, "commission %", "commission%")
 	netIdx := findColumn(header, "net")
 	currencyIdx := findColumn(header, "currency")
 	statusIdx := findColumn(header, "status", "booking status", "reservation status")
+	nightsIdx := findColumn(header, "duration (nights)", "nights", "number of nights")
+
+	// Detect reservations page format: no "type" column, has "commission %" column,
+	// and no "final amount"/"net" columns (statement has those)
+	isReservationsPage := typeIdx < 0 && commissionPctIdx >= 0 && priceIdx < 0 && netIdx < 0
 
 	// Skip non-reservation rows in reservations statement exports
 	if typeIdx >= 0 {
@@ -394,6 +407,14 @@ func parseBookingComRow(header, row []string, propertyID pgtype.UUID, payouts ma
 	}
 
 	nights := int32(math.Round(checkOut.Sub(checkIn).Hours() / 24))
+	if nightsIdx >= 0 {
+		if n, err := strconv.Atoi(getField(row, nightsIdx)); err == nil && n > 0 {
+			nights = int32(n)
+		}
+	}
+
+	var estimatedGross pgtype.Numeric // null by default
+
 	gross := parseAmount(getField(row, amountIdx))
 	price := gross
 	if priceIdx >= 0 {
@@ -402,6 +423,27 @@ func parseBookingComRow(header, row []string, propertyID pgtype.UUID, payouts ma
 		}
 	}
 	commission := parseAmount(getField(row, commissionIdx))
+
+	if isReservationsPage {
+		// Price column is the room rate (no tourist tax included)
+		// estimated_gross = price + (price / 1.11 × 0.03)  — 3% tourist tax on pre-VAT amount
+		roomRate := price
+		estGross := roomRate + (roomRate / 1.11 * 0.03)
+		estGross = math.Round(estGross*100) / 100
+		estimatedGross = decimalFromFloat(estGross)
+
+		// Use estimated gross as best available gross_amount
+		gross = estGross
+
+		// Compute commission from commission % if commission amount column is missing
+		if commission == 0 && commissionPctIdx >= 0 {
+			pct := parseAmount(getField(row, commissionPctIdx))
+			if pct > 0 {
+				commission = math.Round(roomRate*pct) / 100
+			}
+		}
+	}
+
 	net := gross - commission
 	if netIdx >= 0 {
 		if parsed := parseAmount(getField(row, netIdx)); parsed != 0 {
@@ -426,21 +468,45 @@ func parseBookingComRow(header, row []string, propertyID pgtype.UUID, payouts ma
 		}
 	}
 
+	// Try to detect currency from the amount field if no dedicated currency column
+	currency := getField(row, currencyIdx)
+	if currency == "" {
+		currency = detectCurrency(getField(row, amountIdx))
+	}
+
 	return sqlc.UpsertBookingParams{
-		PropertyID:        propertyID,
-		Platform:          "booking",
-		PlatformReference: ref,
-		GuestName:         getField(row, guestIdx),
-		CheckIn:           pgtype.Date{Time: checkIn, Valid: true},
-		CheckOut:          pgtype.Date{Time: checkOut, Valid: true},
-		Nights:            nights,
-		GrossAmount:       decimalFromFloat(gross),
-		PlatformFee:       decimalFromFloat(commission),
-		NetAmount:         decimalFromFloat(net),
-		Currency:          currencyOrDefault(getField(row, currencyIdx), "EUR"),
-		Status:            status,
-		Price:             decimalFromFloat(price),
+		PropertyID:           propertyID,
+		Platform:             "booking",
+		PlatformReference:    ref,
+		GuestName:            getField(row, guestIdx),
+		CheckIn:              pgtype.Date{Time: checkIn, Valid: true},
+		CheckOut:             pgtype.Date{Time: checkOut, Valid: true},
+		Nights:               nights,
+		GrossAmount:          decimalFromFloat(gross),
+		PlatformFee:          decimalFromFloat(commission),
+		NetAmount:            decimalFromFloat(net),
+		Currency:             currencyOrDefault(currency, "EUR"),
+		Status:               status,
+		Price:                decimalFromFloat(price),
+		EstimatedGrossAmount: estimatedGross,
 	}, nil
+}
+
+func detectCurrency(amountStr string) string {
+	s := strings.ToUpper(strings.TrimSpace(amountStr))
+	if strings.Contains(s, "€") || strings.Contains(s, "EUR") {
+		return "EUR"
+	}
+	if strings.Contains(s, "$") || strings.Contains(s, "USD") {
+		return "USD"
+	}
+	if strings.Contains(s, "£") || strings.Contains(s, "GBP") {
+		return "GBP"
+	}
+	if strings.Contains(s, "RON") || strings.Contains(s, "LEI") {
+		return "RON"
+	}
+	return ""
 }
 
 func currencyOrDefault(val, fallback string) string {

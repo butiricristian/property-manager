@@ -15,25 +15,26 @@ const createBooking = `-- name: CreateBooking :one
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status, price
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price
+    net_amount, currency, status, price, estimated_gross_amount
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price, estimated_gross_amount
 `
 
 type CreateBookingParams struct {
-	PropertyID        pgtype.UUID    `json:"property_id"`
-	Platform          string         `json:"platform"`
-	PlatformReference string         `json:"platform_reference"`
-	GuestName         string         `json:"guest_name"`
-	CheckIn           pgtype.Date    `json:"check_in"`
-	CheckOut          pgtype.Date    `json:"check_out"`
-	Nights            int32          `json:"nights"`
-	GrossAmount       pgtype.Numeric `json:"gross_amount"`
-	PlatformFee       pgtype.Numeric `json:"platform_fee"`
-	NetAmount         pgtype.Numeric `json:"net_amount"`
-	Currency          string         `json:"currency"`
-	Status            string         `json:"status"`
-	Price             pgtype.Numeric `json:"price"`
+	PropertyID           pgtype.UUID    `json:"property_id"`
+	Platform             string         `json:"platform"`
+	PlatformReference    string         `json:"platform_reference"`
+	GuestName            string         `json:"guest_name"`
+	CheckIn              pgtype.Date    `json:"check_in"`
+	CheckOut             pgtype.Date    `json:"check_out"`
+	Nights               int32          `json:"nights"`
+	GrossAmount          pgtype.Numeric `json:"gross_amount"`
+	PlatformFee          pgtype.Numeric `json:"platform_fee"`
+	NetAmount            pgtype.Numeric `json:"net_amount"`
+	Currency             string         `json:"currency"`
+	Status               string         `json:"status"`
+	Price                pgtype.Numeric `json:"price"`
+	EstimatedGrossAmount pgtype.Numeric `json:"estimated_gross_amount"`
 }
 
 func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (Booking, error) {
@@ -51,6 +52,7 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (B
 		arg.Currency,
 		arg.Status,
 		arg.Price,
+		arg.EstimatedGrossAmount,
 	)
 	var i Booking
 	err := row.Scan(
@@ -69,6 +71,7 @@ func (q *Queries) CreateBooking(ctx context.Context, arg CreateBookingParams) (B
 		&i.Status,
 		&i.CreatedAt,
 		&i.Price,
+		&i.EstimatedGrossAmount,
 	)
 	return i, err
 }
@@ -151,8 +154,11 @@ SELECT
     COUNT(*)::INT AS bookings_count,
     COALESCE(SUM(b.nights), 0)::INT AS total_nights
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE p.user_id = $1
+WHERE b.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = $1
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
+  )
   AND b.status != 'cancelled'
   AND b.check_in >= $2::date
   AND b.check_in < $3::date
@@ -204,7 +210,7 @@ func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, ar
 }
 
 const getBooking = `-- name: GetBooking :one
-SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price FROM bookings WHERE id = $1
+SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price, estimated_gross_amount FROM bookings WHERE id = $1
 `
 
 func (q *Queries) GetBooking(ctx context.Context, id pgtype.UUID) (Booking, error) {
@@ -226,6 +232,7 @@ func (q *Queries) GetBooking(ctx context.Context, id pgtype.UUID) (Booking, erro
 		&i.Status,
 		&i.CreatedAt,
 		&i.Price,
+		&i.EstimatedGrossAmount,
 	)
 	return i, err
 }
@@ -266,8 +273,11 @@ SELECT
     COUNT(*) FILTER (WHERE b.status = 'cancelled')::INT AS cancelled_count,
     COUNT(*)::INT AS total_count
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE p.user_id = $1
+WHERE b.property_id IN (
+    SELECT prp.id FROM properties prp WHERE prp.user_id = $1
+    UNION
+    SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
+  )
   AND b.check_in >= $2::date
   AND b.check_in < $3::date
 `
@@ -353,7 +363,7 @@ func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBooki
 }
 
 const listBookingsByProperty = `-- name: ListBookingsByProperty :many
-SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price FROM bookings
+SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price, estimated_gross_amount FROM bookings
 WHERE property_id = $1
   AND check_in >= $2::date
   AND check_in < $3::date
@@ -391,6 +401,7 @@ func (q *Queries) ListBookingsByProperty(ctx context.Context, arg ListBookingsBy
 			&i.Status,
 			&i.CreatedAt,
 			&i.Price,
+			&i.EstimatedGrossAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -406,8 +417,8 @@ const upsertBooking = `-- name: UpsertBooking :one
 INSERT INTO bookings (
     property_id, platform, platform_reference, guest_name,
     check_in, check_out, nights, gross_amount, platform_fee,
-    net_amount, currency, status, price
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    net_amount, currency, status, price, estimated_gross_amount
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (platform, platform_reference) DO UPDATE SET
     guest_name = EXCLUDED.guest_name,
     check_in = EXCLUDED.check_in,
@@ -418,24 +429,26 @@ ON CONFLICT (platform, platform_reference) DO UPDATE SET
     net_amount = EXCLUDED.net_amount,
     currency = EXCLUDED.currency,
     status = EXCLUDED.status,
-    price = EXCLUDED.price
-RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price
+    price = EXCLUDED.price,
+    estimated_gross_amount = COALESCE(EXCLUDED.estimated_gross_amount, bookings.estimated_gross_amount)
+RETURNING id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price, estimated_gross_amount
 `
 
 type UpsertBookingParams struct {
-	PropertyID        pgtype.UUID    `json:"property_id"`
-	Platform          string         `json:"platform"`
-	PlatformReference string         `json:"platform_reference"`
-	GuestName         string         `json:"guest_name"`
-	CheckIn           pgtype.Date    `json:"check_in"`
-	CheckOut          pgtype.Date    `json:"check_out"`
-	Nights            int32          `json:"nights"`
-	GrossAmount       pgtype.Numeric `json:"gross_amount"`
-	PlatformFee       pgtype.Numeric `json:"platform_fee"`
-	NetAmount         pgtype.Numeric `json:"net_amount"`
-	Currency          string         `json:"currency"`
-	Status            string         `json:"status"`
-	Price             pgtype.Numeric `json:"price"`
+	PropertyID           pgtype.UUID    `json:"property_id"`
+	Platform             string         `json:"platform"`
+	PlatformReference    string         `json:"platform_reference"`
+	GuestName            string         `json:"guest_name"`
+	CheckIn              pgtype.Date    `json:"check_in"`
+	CheckOut             pgtype.Date    `json:"check_out"`
+	Nights               int32          `json:"nights"`
+	GrossAmount          pgtype.Numeric `json:"gross_amount"`
+	PlatformFee          pgtype.Numeric `json:"platform_fee"`
+	NetAmount            pgtype.Numeric `json:"net_amount"`
+	Currency             string         `json:"currency"`
+	Status               string         `json:"status"`
+	Price                pgtype.Numeric `json:"price"`
+	EstimatedGrossAmount pgtype.Numeric `json:"estimated_gross_amount"`
 }
 
 func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (Booking, error) {
@@ -453,6 +466,7 @@ func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (B
 		arg.Currency,
 		arg.Status,
 		arg.Price,
+		arg.EstimatedGrossAmount,
 	)
 	var i Booking
 	err := row.Scan(
@@ -471,6 +485,7 @@ func (q *Queries) UpsertBooking(ctx context.Context, arg UpsertBookingParams) (B
 		&i.Status,
 		&i.CreatedAt,
 		&i.Price,
+		&i.EstimatedGrossAmount,
 	)
 	return i, err
 }

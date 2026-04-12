@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -47,6 +49,7 @@ type userInfo struct {
 	CreatedAt string `json:"created_at"`
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatar_url"`
+	UserType  string `json:"user_type"`
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +96,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			ID:        uuidBytesToString(user.ID),
 			Email:     user.Email,
 			CreatedAt: user.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			UserType:  "free",
 		},
 	})
 }
@@ -135,6 +139,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: user.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 			Name:      user.Name,
 			AvatarURL: user.AvatarUrl,
+			UserType:  user.UserType,
 		},
 	})
 }
@@ -158,6 +163,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: user.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		Name:      user.Name,
 		AvatarURL: user.AvatarUrl,
+		UserType:  user.UserType,
 	})
 }
 
@@ -323,6 +329,232 @@ func fetchGoogleUserInfo(ctx context.Context, cfg *oauth2.Config, token *oauth2.
 		return nil, err
 	}
 	return &info, nil
+}
+
+func (h *AuthHandler) Guest(w http.ResponseWriter, r *http.Request) {
+	guestEmail := fmt.Sprintf("guest-%s@guest.local", uuid.New().String())
+
+	user, err := h.queries.CreateGuestUser(r.Context(), guestEmail)
+	if err != nil {
+		respondInternalError(w, "failed to create guest user", err)
+		return
+	}
+
+	// Create a demo property for the guest
+	property, err := h.queries.CreateProperty(r.Context(), sqlc.CreatePropertyParams{
+		Name:    "Demo Property",
+		Address: "123 Demo Street",
+		UserID:  user.ID,
+	})
+	if err != nil {
+		respondInternalError(w, "failed to create demo property", err)
+		return
+	}
+
+	// Seed demo data so guests see a populated dashboard
+	if err := h.seedGuestData(r.Context(), property.ID); err != nil {
+		log.Printf("WARNING: failed to seed guest demo data: %v", err)
+	}
+
+	uid, _ := uuid.Parse(uuidBytesToString(user.ID))
+	token, err := h.jwtSvc.GenerateToken(uid, user.Email)
+	if err != nil {
+		respondInternalError(w, "failed to generate token", err)
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, authResponse{
+		Token: token,
+		User: userInfo{
+			ID:        uuidBytesToString(user.ID),
+			Email:     user.Email,
+			CreatedAt: user.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			UserType:  user.UserType,
+		},
+	})
+}
+
+func demoNumeric(amount float64) pgtype.Numeric {
+	cents := int64(amount * 100)
+	var n pgtype.Numeric
+	n.Int = big.NewInt(cents)
+	n.Exp = -2
+	n.Valid = true
+	return n
+}
+
+func demoDate(t time.Time) pgtype.Date {
+	return pgtype.Date{Time: t, Valid: true}
+}
+
+func (h *AuthHandler) seedGuestData(ctx context.Context, propertyID pgtype.UUID) error {
+	now := time.Now()
+	year, monthNum, _ := now.Date()
+	loc := now.Location()
+	monthStart := time.Date(year, monthNum, 1, 0, 0, 0, 0, loc)
+
+	// Unique suffix so demo refs don't collide across guest accounts
+	suffix := uuid.New().String()[:8]
+
+	type booking struct {
+		platform  string
+		ref       string
+		guest     string
+		checkIn   time.Time
+		checkOut  time.Time
+		nights    int32
+		gross     float64
+		price     float64
+		fee       float64
+		net       float64
+		currency  string
+		status    string
+	}
+
+	bookings := []booking{
+		{
+			platform: "airbnb", ref: "HM-" + suffix + "-1", guest: "Alice Johnson",
+			checkIn: monthStart.AddDate(0, 0, 1), checkOut: monthStart.AddDate(0, 0, 4),
+			nights: 3, gross: 420, price: 420, fee: 63, net: 357, currency: "EUR", status: "completed",
+		},
+		{
+			platform: "booking", ref: "BK-" + suffix + "-2", guest: "Marco Rossi",
+			checkIn: monthStart.AddDate(0, 0, 5), checkOut: monthStart.AddDate(0, 0, 8),
+			nights: 3, gross: 390, price: 390, fee: 58.50, net: 331.50, currency: "EUR", status: "completed",
+		},
+		{
+			platform: "airbnb", ref: "HM-" + suffix + "-3", guest: "Sophie Mueller",
+			checkIn: monthStart.AddDate(0, 0, 9), checkOut: monthStart.AddDate(0, 0, 11),
+			nights: 2, gross: 310, price: 310, fee: 46.50, net: 263.50, currency: "EUR", status: "completed",
+		},
+		{
+			platform: "booking", ref: "BK-" + suffix + "-4", guest: "James Smith",
+			checkIn: monthStart.AddDate(0, 0, 12), checkOut: monthStart.AddDate(0, 0, 17),
+			nights: 5, gross: 675, price: 675, fee: 101.25, net: 573.75, currency: "EUR", status: "completed",
+		},
+		{
+			platform: "airbnb", ref: "HM-" + suffix + "-5", guest: "Elena Popescu",
+			checkIn: monthStart.AddDate(0, 0, 18), checkOut: monthStart.AddDate(0, 0, 20),
+			nights: 2, gross: 280, price: 280, fee: 42, net: 238, currency: "EUR", status: "confirmed",
+		},
+		{
+			platform: "booking", ref: "BK-" + suffix + "-6", guest: "Hans Weber",
+			checkIn: monthStart.AddDate(0, 0, 21), checkOut: monthStart.AddDate(0, 0, 25),
+			nights: 4, gross: 540, price: 540, fee: 81, net: 459, currency: "EUR", status: "confirmed",
+		},
+		{
+			platform: "airbnb", ref: "HM-" + suffix + "-7", guest: "Laura Chen",
+			checkIn: monthStart.AddDate(0, 0, 14), checkOut: monthStart.AddDate(0, 0, 16),
+			nights: 2, gross: 290, price: 290, fee: 43.50, net: 246.50, currency: "EUR", status: "cancelled",
+		},
+	}
+
+	for _, b := range bookings {
+		_, err := h.queries.CreateBooking(ctx, sqlc.CreateBookingParams{
+			PropertyID:        propertyID,
+			Platform:          b.platform,
+			PlatformReference: b.ref,
+			GuestName:         b.guest,
+			CheckIn:           demoDate(b.checkIn),
+			CheckOut:          demoDate(b.checkOut),
+			Nights:            b.nights,
+			GrossAmount:       demoNumeric(b.gross),
+			Price:             demoNumeric(b.price),
+			PlatformFee:       demoNumeric(b.fee),
+			NetAmount:         demoNumeric(b.net),
+			Currency:          b.currency,
+			Status:            b.status,
+		})
+		if err != nil {
+			return fmt.Errorf("create booking %s: %w", b.ref, err)
+		}
+	}
+
+	// Electricity bill
+	_, err := h.queries.CreateExpense(ctx, sqlc.CreateExpenseParams{
+		PropertyID:  propertyID,
+		Category:    "electricity",
+		Description: "Monthly electricity bill",
+		Amount:      demoNumeric(87.50),
+		Currency:    "EUR",
+		Date:        demoDate(monthStart.AddDate(0, 0, 14)),
+		Recurring:   true,
+	})
+	if err != nil {
+		return fmt.Errorf("create expense: %w", err)
+	}
+
+	// Income tax rule (10% of profit)
+	_, err = h.queries.CreateTaxRule(ctx, sqlc.CreateTaxRuleParams{
+		PropertyID: propertyID,
+		Name:       "Income Tax (10%)",
+		Type:       "percentage",
+		Percentage: demoNumeric(10),
+		Currency:   "EUR",
+	})
+	if err != nil {
+		return fmt.Errorf("create tax rule: %w", err)
+	}
+
+	return nil
+}
+
+func (h *AuthHandler) UpgradeGuest(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req authRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if !emailRegex.MatchString(req.Email) {
+		respondError(w, http.StatusBadRequest, "invalid email format")
+		return
+	}
+	if len(req.Password) < 8 {
+		respondError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		respondInternalError(w, "failed to hash password", err)
+		return
+	}
+
+	user, err := h.queries.UpgradeGuestUser(r.Context(), sqlc.UpgradeGuestUserParams{
+		ID:           userID,
+		Email:        req.Email,
+		PasswordHash: pgtype.Text{String: hash, Valid: true},
+	})
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "upgrade failed — account may not be a guest or email already in use")
+		return
+	}
+
+	uid, _ := uuid.Parse(uuidBytesToString(user.ID))
+	token, err := h.jwtSvc.GenerateToken(uid, user.Email)
+	if err != nil {
+		respondInternalError(w, "failed to generate token", err)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, authResponse{
+		Token: token,
+		User: userInfo{
+			ID:        uuidBytesToString(user.ID),
+			Email:     user.Email,
+			CreatedAt: user.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
+			Name:      user.Name,
+			AvatarURL: user.AvatarUrl,
+			UserType:  user.UserType,
+		},
+	})
 }
 
 func generateRandomState() (string, error) {
