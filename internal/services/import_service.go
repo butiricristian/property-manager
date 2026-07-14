@@ -518,18 +518,28 @@ func currencyOrDefault(val, fallback string) string {
 }
 
 func parseAirbnbRow(header, row []string, propertyID pgtype.UUID) (sqlc.UpsertBookingParams, error) {
-	refIdx := findColumn(header, "confirmation code", "reservation code")
-	guestIdx := findColumn(header, "guest", "guest name", "guest first name")
-	checkInIdx := findColumn(header, "start date", "check-in", "date")
-	checkOutIdx := findColumn(header, "end date", "check-out")
-	amountIdx := findColumn(header, "amount", "total", "gross earnings")
-	hostFeeIdx := findColumn(header, "host fee", "service fee", "host service fee")
-	statusIdx := findColumn(header, "status", "type")
-	nightsIdx := findColumn(header, "nights", "number of nights")
+	typeIdx := findColumn(header, "tip", "type", "status")
+	refIdx := findColumn(header, "cod de confirmare", "confirmation code", "reservation code")
+	guestIdx := findColumn(header, "oaspete", "guest", "guest name", "guest first name")
+	checkInIdx := findColumn(header, "data de început", "start date", "check-in", "date")
+	checkOutIdx := findColumn(header, "data de sfârșit", "end date", "check-out")
+	// "Suma" is the co-host payout amount; "Câștiguri brute" is 0 for co-host rows
+	amountIdx := findColumn(header, "suma", "amount", "total", "gross earnings", "câștiguri brute")
+	hostFeeIdx := findColumn(header, "taxa de servicii", "host fee", "service fee", "host service fee")
+	nightsIdx := findColumn(header, "nopți", "nights", "number of nights")
+	currencyIdx := findColumn(header, "moneda", "currency")
+
+	// Skip non-booking rows (payouts, transfers, etc.)
+	if typeIdx >= 0 {
+		rowType := strings.ToLower(getField(row, typeIdx))
+		if rowType == "payout" || strings.Contains(rowType, "transfer") {
+			return sqlc.UpsertBookingParams{}, errSkipRow
+		}
+	}
 
 	ref := getField(row, refIdx)
 	if ref == "" {
-		return sqlc.UpsertBookingParams{}, fmt.Errorf("missing confirmation code")
+		return sqlc.UpsertBookingParams{}, errSkipRow
 	}
 
 	checkIn, err := parseDate(getField(row, checkInIdx))
@@ -543,7 +553,7 @@ func parseAirbnbRow(header, row []string, propertyID pgtype.UUID) (sqlc.UpsertBo
 
 	nights := int32(math.Round(checkOut.Sub(checkIn).Hours() / 24))
 	if nightsIdx >= 0 {
-		if n, err := strconv.Atoi(getField(row, nightsIdx)); err == nil {
+		if n, err := strconv.Atoi(getField(row, nightsIdx)); err == nil && n > 0 {
 			nights = int32(n)
 		}
 	}
@@ -553,12 +563,14 @@ func parseAirbnbRow(header, row []string, propertyID pgtype.UUID) (sqlc.UpsertBo
 	net := gross - fee
 
 	status := "confirmed"
-	if statusIdx >= 0 {
-		s := strings.ToLower(getField(row, statusIdx))
-		if strings.Contains(s, "cancel") {
+	if typeIdx >= 0 {
+		t := strings.ToLower(getField(row, typeIdx))
+		if strings.Contains(t, "cancel") || strings.Contains(t, "anulat") {
 			status = "cancelled"
 		}
 	}
+
+	currency := getField(row, currencyIdx)
 
 	return sqlc.UpsertBookingParams{
 		PropertyID:        propertyID,
@@ -571,7 +583,7 @@ func parseAirbnbRow(header, row []string, propertyID pgtype.UUID) (sqlc.UpsertBo
 		GrossAmount:       decimalFromFloat(gross),
 		PlatformFee:       decimalFromFloat(fee),
 		NetAmount:         decimalFromFloat(net),
-		Currency:          "EUR",
+		Currency:          currencyOrDefault(currency, "EUR"),
 		Status:            status,
 		Price:             decimalFromFloat(gross),
 	}, nil

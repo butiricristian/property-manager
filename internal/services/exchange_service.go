@@ -101,5 +101,8 @@ func (s *ExchangeService) Convert(ctx context.Context, amount decimal.Decimal, f
 	if err != nil {
 		return decimal.Decimal{}, err
 	}
-	return amount.Mul(rate), nil
+	// Money: converted amounts are rounded to 2 decimal places so downstream
+	// values (booking prices, invoices, dashboard totals) never carry the long
+	// tail of digits produced by the raw exchange-rate multiplication.
+	return amount.Mul(rate).Round(2), nil
 }

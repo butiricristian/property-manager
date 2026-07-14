@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
@@ -297,10 +298,22 @@ func buildSummary(month, currency string, totalIncome, platformFees, netIncome d
 
 	profit := netIncome.Sub(expenses.Total)
 
-	daysInMonth := endDate.Time.Sub(startDate.Time).Hours() / 24
+	daysInRange := endDate.Time.Sub(startDate.Time).Hours() / 24
 	occupancyRate := 0.0
-	if daysInMonth > 0 {
-		occupancyRate = math.Min(float64(totalNights)/daysInMonth, 1.0)
+	if daysInRange > 0 {
+		occupancyRate = math.Min(float64(totalNights)/daysInRange, 1.0)
+	}
+
+	// Estimated occupancy: extrapolate from elapsed days when the range hasn't ended yet
+	var estimatedOccupancy *float64
+	now := time.Now()
+	if now.Before(endDate.Time) && now.After(startDate.Time) {
+		daysElapsed := now.Sub(startDate.Time).Hours() / 24
+		if daysElapsed >= 1 && daysInRange > 0 {
+			est := math.Min(float64(totalNights)/daysElapsed, 1.0)
+			est = math.Round(est*100) / 100
+			estimatedOccupancy = &est
+		}
 	}
 
 	// ADR = gross income / total nights
@@ -311,8 +324,8 @@ func buildSummary(month, currency string, totalIncome, platformFees, netIncome d
 
 	// RevPAR = gross income / days in month
 	revpar := decimal.Zero
-	if daysInMonth > 0 {
-		revpar = totalIncome.Div(decimal.NewFromFloat(daysInMonth)).Round(2)
+	if daysInRange > 0 {
+		revpar = totalIncome.Div(decimal.NewFromFloat(daysInRange)).Round(2)
 	}
 
 	// Avg stay length = total nights / bookings count (non-cancelled)
@@ -328,20 +341,21 @@ func buildSummary(month, currency string, totalIncome, platformFees, netIncome d
 	}
 
 	return &models.DashboardSummary{
-		Month:            month,
-		Currency:         currency,
-		TotalIncome:      totalIncome,
-		PlatformFees:     platformFees,
-		NetIncome:        netIncome,
-		Expenses:         expenses,
-		Profit:           profit,
-		OccupancyRate:    math.Round(occupancyRate*100) / 100,
-		BookingsCount:    bookingsCount,
-		ADR:              adr,
-		RevPAR:           revpar,
-		AvgStayLength:    avgStayLength,
-		AvgLeadTimeDays:  math.Round(avgLeadTimeDays*10) / 10,
-		CancellationRate: cancellationRate,
+		Month:                  month,
+		Currency:               currency,
+		TotalIncome:            totalIncome,
+		PlatformFees:           platformFees,
+		NetIncome:              netIncome,
+		Expenses:               expenses,
+		Profit:                 profit,
+		OccupancyRate:          math.Round(occupancyRate*100) / 100,
+		EstimatedOccupancyRate: estimatedOccupancy,
+		BookingsCount:          bookingsCount,
+		ADR:                    adr,
+		RevPAR:                 revpar,
+		AvgStayLength:          avgStayLength,
+		AvgLeadTimeDays:        math.Round(avgLeadTimeDays*10) / 10,
+		CancellationRate:       cancellationRate,
 	}
 }
 
@@ -353,6 +367,8 @@ func setCategoryDecimal(expenses *models.ExpenseBreakdown, category string, valu
 		expenses.Heating = expenses.Heating.Add(value)
 	case "water":
 		expenses.Water = expenses.Water.Add(value)
+	case "internet":
+		expenses.Internet = expenses.Internet.Add(value)
 	case "maintenance":
 		expenses.Maintenance = expenses.Maintenance.Add(value)
 	case "cleaning":

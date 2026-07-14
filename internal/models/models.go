@@ -82,7 +82,8 @@ type DashboardSummary struct {
 	Taxes            []TaxEstimate   `json:"taxes"`
 	TotalTax         decimal.Decimal `json:"total_tax"`
 	ProfitAfterTax   decimal.Decimal `json:"profit_after_tax"`
-	OccupancyRate    float64         `json:"occupancy_rate"`
+	OccupancyRate          float64         `json:"occupancy_rate"`
+	EstimatedOccupancyRate *float64        `json:"estimated_occupancy_rate,omitempty"`
 	BookingsCount    int             `json:"bookings_count"`
 	ADR              decimal.Decimal `json:"adr"`
 	RevPAR           decimal.Decimal `json:"revpar"`
@@ -95,6 +96,7 @@ type ExpenseBreakdown struct {
 	Electricity   decimal.Decimal `json:"electricity"`
 	Heating       decimal.Decimal `json:"heating"`
 	Water         decimal.Decimal `json:"water"`
+	Internet      decimal.Decimal `json:"internet"`
 	Maintenance   decimal.Decimal `json:"maintenance"`
 	Cleaning      decimal.Decimal `json:"cleaning"`
 	Other         decimal.Decimal `json:"other"`
