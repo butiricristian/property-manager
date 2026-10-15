@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -78,9 +79,26 @@ type createExpenseRequest struct {
 	Amount       float64 `json:"amount"`
 	Currency     string  `json:"currency"`
 	Date         string  `json:"date"`
+	EndDate      string  `json:"end_date"`
 	Recurring    bool    `json:"recurring"`
 	IsPercentage bool    `json:"is_percentage"`
 	Percentage   float64 `json:"percentage"`
+}
+
+// parseEndDate reads the optional last-active day of a recurring expense. An
+// empty value means the expense runs indefinitely.
+func parseEndDate(s string, start time.Time) (pgtype.Date, error) {
+	if s == "" {
+		return pgtype.Date{}, nil
+	}
+	end, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return pgtype.Date{}, fmt.Errorf("invalid end date format")
+	}
+	if end.Before(start) {
+		return pgtype.Date{}, fmt.Errorf("end date must be on or after the start date")
+	}
+	return pgtype.Date{Time: end, Valid: true}, nil
 }
 
 func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +124,12 @@ func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	endDate, err := parseEndDate(req.EndDate, date)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if req.Currency == "" {
 		req.Currency = "EUR"
 	}
@@ -117,6 +141,7 @@ func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Amount:       decimalFromFloat(req.Amount),
 		Currency:     req.Currency,
 		Date:         pgtype.Date{Time: date, Valid: true},
+		EndDate:      endDate,
 		Recurring:    req.Recurring,
 		IsPercentage: req.IsPercentage,
 		Percentage:   decimalFromFloat(req.Percentage),
@@ -134,6 +159,7 @@ type updateExpenseRequest struct {
 	Amount       float64 `json:"amount"`
 	Currency     string  `json:"currency"`
 	Date         string  `json:"date"`
+	EndDate      string  `json:"end_date"`
 	Recurring    bool    `json:"recurring"`
 	IsPercentage bool    `json:"is_percentage"`
 	Percentage   float64 `json:"percentage"`
@@ -175,6 +201,12 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	endDate, err := parseEndDate(req.EndDate, date)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if req.Currency == "" {
 		req.Currency = "EUR"
 	}
@@ -186,6 +218,7 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Amount:       decimalFromFloat(req.Amount),
 		Currency:     req.Currency,
 		Date:         pgtype.Date{Time: date, Valid: true},
+		EndDate:      endDate,
 		Recurring:    req.Recurring,
 		IsPercentage: req.IsPercentage,
 		Percentage:   decimalFromFloat(req.Percentage),

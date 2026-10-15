@@ -12,9 +12,9 @@ import (
 )
 
 const createExpense = `-- name: CreateExpense :one
-INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage
+INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage, end_date)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date
 `
 
 type CreateExpenseParams struct {
@@ -27,6 +27,7 @@ type CreateExpenseParams struct {
 	Recurring    bool           `json:"recurring"`
 	IsPercentage bool           `json:"is_percentage"`
 	Percentage   pgtype.Numeric `json:"percentage"`
+	EndDate      pgtype.Date    `json:"end_date"`
 }
 
 func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (Expense, error) {
@@ -40,6 +41,7 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 		arg.Recurring,
 		arg.IsPercentage,
 		arg.Percentage,
+		arg.EndDate,
 	)
 	var i Expense
 	err := row.Scan(
@@ -54,6 +56,7 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 		&i.CreatedAt,
 		&i.IsPercentage,
 		&i.Percentage,
+		&i.EndDate,
 	)
 	return i, err
 }
@@ -77,6 +80,7 @@ WHERE (
     (date >= $1::date AND date < $2::date)
     OR (recurring = true AND date < $2::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= $1::date)
   AND is_percentage = false
 GROUP BY category, currency
 `
@@ -127,6 +131,7 @@ WHERE e.property_id IN (
     (e.date >= $2::date AND e.date < $3::date)
     OR (e.recurring = true AND e.date < $3::date)
   )
+  AND (e.end_date IS NULL OR e.end_date >= $2::date)
   AND e.is_percentage = false
 GROUP BY e.category, e.currency
 `
@@ -164,11 +169,12 @@ func (q *Queries) GetAllExpensesByCategoryCurrencyForUser(ctx context.Context, a
 }
 
 const getAllPercentageExpenses = `-- name: GetAllPercentageExpenses :many
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date FROM expenses
 WHERE (
     (date >= $1::date AND date < $2::date)
     OR (recurring = true AND date < $2::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= $1::date)
   AND is_percentage = true
 `
 
@@ -198,6 +204,7 @@ func (q *Queries) GetAllPercentageExpenses(ctx context.Context, arg GetAllPercen
 			&i.CreatedAt,
 			&i.IsPercentage,
 			&i.Percentage,
+			&i.EndDate,
 		); err != nil {
 			return nil, err
 		}
@@ -210,7 +217,7 @@ func (q *Queries) GetAllPercentageExpenses(ctx context.Context, arg GetAllPercen
 }
 
 const getAllPercentageExpensesForUser = `-- name: GetAllPercentageExpensesForUser :many
-SELECT e.id, e.property_id, e.category, e.description, e.amount, e.currency, e.date, e.recurring, e.created_at, e.is_percentage, e.percentage FROM expenses e
+SELECT e.id, e.property_id, e.category, e.description, e.amount, e.currency, e.date, e.recurring, e.created_at, e.is_percentage, e.percentage, e.end_date FROM expenses e
 WHERE e.property_id IN (
     SELECT prp.id FROM properties prp WHERE prp.user_id = $1
     UNION
@@ -220,6 +227,7 @@ WHERE e.property_id IN (
     (e.date >= $2::date AND e.date < $3::date)
     OR (e.recurring = true AND e.date < $3::date)
   )
+  AND (e.end_date IS NULL OR e.end_date >= $2::date)
   AND e.is_percentage = true
 `
 
@@ -250,6 +258,7 @@ func (q *Queries) GetAllPercentageExpensesForUser(ctx context.Context, arg GetAl
 			&i.CreatedAt,
 			&i.IsPercentage,
 			&i.Percentage,
+			&i.EndDate,
 		); err != nil {
 			return nil, err
 		}
@@ -262,7 +271,7 @@ func (q *Queries) GetAllPercentageExpensesForUser(ctx context.Context, arg GetAl
 }
 
 const getExpense = `-- name: GetExpense :one
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses WHERE id = $1
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date FROM expenses WHERE id = $1
 `
 
 func (q *Queries) GetExpense(ctx context.Context, id pgtype.UUID) (Expense, error) {
@@ -280,6 +289,7 @@ func (q *Queries) GetExpense(ctx context.Context, id pgtype.UUID) (Expense, erro
 		&i.CreatedAt,
 		&i.IsPercentage,
 		&i.Percentage,
+		&i.EndDate,
 	)
 	return i, err
 }
@@ -295,6 +305,7 @@ WHERE property_id = $1
     (date >= $2::date AND date < $3::date)
     OR (recurring = true AND date < $3::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= $2::date)
   AND is_percentage = false
 GROUP BY category, currency
 `
@@ -332,12 +343,13 @@ func (q *Queries) GetExpensesByCategoryCurrency(ctx context.Context, arg GetExpe
 }
 
 const getPercentageExpensesByProperty = `-- name: GetPercentageExpensesByProperty :many
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date FROM expenses
 WHERE property_id = $1
   AND (
     (date >= $2::date AND date < $3::date)
     OR (recurring = true AND date < $3::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= $2::date)
   AND is_percentage = true
 `
 
@@ -368,6 +380,7 @@ func (q *Queries) GetPercentageExpensesByProperty(ctx context.Context, arg GetPe
 			&i.CreatedAt,
 			&i.IsPercentage,
 			&i.Percentage,
+			&i.EndDate,
 		); err != nil {
 			return nil, err
 		}
@@ -380,12 +393,13 @@ func (q *Queries) GetPercentageExpensesByProperty(ctx context.Context, arg GetPe
 }
 
 const listExpensesByProperty = `-- name: ListExpensesByProperty :many
-SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage FROM expenses
+SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date FROM expenses
 WHERE property_id = $1
   AND (
     (date >= $2::date AND date < $3::date)
     OR (recurring = true AND date < $3::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= $2::date)
 ORDER BY date DESC
 `
 
@@ -416,6 +430,7 @@ func (q *Queries) ListExpensesByProperty(ctx context.Context, arg ListExpensesBy
 			&i.CreatedAt,
 			&i.IsPercentage,
 			&i.Percentage,
+			&i.EndDate,
 		); err != nil {
 			return nil, err
 		}
@@ -429,9 +444,9 @@ func (q *Queries) ListExpensesByProperty(ctx context.Context, arg ListExpensesBy
 
 const updateExpense = `-- name: UpdateExpense :one
 UPDATE expenses
-SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9
+SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9, end_date = $10
 WHERE id = $1
-RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage
+RETURNING id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date
 `
 
 type UpdateExpenseParams struct {
@@ -444,6 +459,7 @@ type UpdateExpenseParams struct {
 	Recurring    bool           `json:"recurring"`
 	IsPercentage bool           `json:"is_percentage"`
 	Percentage   pgtype.Numeric `json:"percentage"`
+	EndDate      pgtype.Date    `json:"end_date"`
 }
 
 func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (Expense, error) {
@@ -457,6 +473,7 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (E
 		arg.Recurring,
 		arg.IsPercentage,
 		arg.Percentage,
+		arg.EndDate,
 	)
 	var i Expense
 	err := row.Scan(
@@ -471,6 +488,7 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (E
 		&i.CreatedAt,
 		&i.IsPercentage,
 		&i.Percentage,
+		&i.EndDate,
 	)
 	return i, err
 }

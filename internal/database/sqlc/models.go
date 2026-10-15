@@ -39,6 +39,7 @@ type Expense struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	IsPercentage bool               `json:"is_percentage"`
 	Percentage   pgtype.Numeric     `json:"percentage"`
+	EndDate      pgtype.Date        `json:"end_date"`
 }
 
 type Integration struct {

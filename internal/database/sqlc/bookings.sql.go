@@ -146,6 +146,7 @@ func (q *Queries) GetAllBookingsSummaryByCurrency(ctx context.Context, arg GetAl
 
 const getAllBookingsSummaryByCurrencyForUser = `-- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
+    b.property_id,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
@@ -162,7 +163,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_in >= $2::date
   AND b.check_in < $3::date
-GROUP BY b.currency
+GROUP BY b.property_id, b.currency
 `
 
 type GetAllBookingsSummaryByCurrencyForUserParams struct {
@@ -172,6 +173,7 @@ type GetAllBookingsSummaryByCurrencyForUserParams struct {
 }
 
 type GetAllBookingsSummaryByCurrencyForUserRow struct {
+	PropertyID    pgtype.UUID    `json:"property_id"`
 	Currency      string         `json:"currency"`
 	TotalIncome   pgtype.Numeric `json:"total_income"`
 	TotalPrice    pgtype.Numeric `json:"total_price"`
@@ -191,6 +193,7 @@ func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, ar
 	for rows.Next() {
 		var i GetAllBookingsSummaryByCurrencyForUserRow
 		if err := rows.Scan(
+			&i.PropertyID,
 			&i.Currency,
 			&i.TotalIncome,
 			&i.TotalPrice,

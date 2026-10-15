@@ -72,6 +72,7 @@ GROUP BY currency;
 
 -- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
+    b.property_id,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
@@ -88,7 +89,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_in >= @start_date::date
   AND b.check_in < @end_date::date
-GROUP BY b.currency;
+GROUP BY b.property_id, b.currency;
 
 -- name: GetBookingAnalyticsByProperty :one
 SELECT

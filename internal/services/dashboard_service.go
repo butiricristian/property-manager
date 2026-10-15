@@ -87,7 +87,7 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	if err != nil {
 		return nil, err
 	}
-	s.applyPercentageExpenses(pctRows, netIncome, &expenses)
+	s.applyPercentageExpenses(pctRows, map[pgtype.UUID]decimal.Decimal{propertyID: netIncome}, &expenses)
 
 	analytics, err := s.queries.GetBookingAnalyticsByProperty(ctx, sqlc.GetBookingAnalyticsByPropertyParams{
 		PropertyID: propertyID,
@@ -137,6 +137,8 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	netIncome := decimal.Zero
 	bookingsCount := 0
 	totalNights := 0
+	// Percentage expenses are scoped to their own property, so keep the split.
+	netByProperty := map[pgtype.UUID]decimal.Decimal{}
 
 	for _, row := range bookingRows {
 		currency := row.Currency
@@ -155,6 +157,7 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 		totalIncome = totalIncome.Add(income)
 		platformFees = platformFees.Add(fees)
 		netIncome = netIncome.Add(net)
+		netByProperty[row.PropertyID] = netByProperty[row.PropertyID].Add(net)
 		bookingsCount += int(row.BookingsCount)
 		totalNights += int(row.TotalNights)
 	}
@@ -181,7 +184,7 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	if err != nil {
 		return nil, err
 	}
-	s.applyPercentageExpenses(pctRows, netIncome, &expenses)
+	s.applyPercentageExpenses(pctRows, netByProperty, &expenses)
 
 	analytics, err := s.queries.GetBookingAnalyticsForUser(ctx, sqlc.GetBookingAnalyticsForUserParams{
 		UserID:    userID,
@@ -380,9 +383,16 @@ func setCategoryDecimal(expenses *models.ExpenseBreakdown, category string, valu
 	}
 }
 
-func (s *DashboardService) applyPercentageExpenses(rows []sqlc.Expense, netIncome decimal.Decimal, expenses *models.ExpenseBreakdown) {
+// applyPercentageExpenses charges each percentage expense against the net income
+// of the property it belongs to — a 20% partner on one property must not take a
+// cut of what the other properties earned.
+func (s *DashboardService) applyPercentageExpenses(rows []sqlc.Expense, netByProperty map[pgtype.UUID]decimal.Decimal, expenses *models.ExpenseBreakdown) {
 	hundred := decimal.NewFromInt(100)
 	for _, row := range rows {
+		netIncome, ok := netByProperty[row.PropertyID]
+		if !ok {
+			continue
+		}
 		pct := numericToDecimal(row.Percentage)
 		amount := pct.Div(hundred).Mul(netIncome).Round(2)
 		setCategoryDecimal(expenses, row.Category, amount)

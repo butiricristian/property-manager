@@ -41,6 +41,7 @@ type Expense struct {
 	Amount       decimal.Decimal `json:"amount"`
 	Currency     string          `json:"currency"`
 	Date         time.Time       `json:"date"`
+	EndDate      *time.Time      `json:"end_date"`
 	Recurring    bool            `json:"recurring"`
 	IsPercentage bool            `json:"is_percentage"`
 	Percentage   decimal.Decimal `json:"percentage"`

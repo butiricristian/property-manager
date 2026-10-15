@@ -5,19 +5,20 @@ WHERE property_id = $1
     (date >= @start_date::date AND date < @end_date::date)
     OR (recurring = true AND date < @end_date::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= @start_date::date)
 ORDER BY date DESC;
 
 -- name: GetExpense :one
 SELECT * FROM expenses WHERE id = $1;
 
 -- name: CreateExpense :one
-INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage, end_date)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: UpdateExpense :one
 UPDATE expenses
-SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9
+SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9, end_date = $10
 WHERE id = $1
 RETURNING *;
 
@@ -35,6 +36,7 @@ WHERE property_id = $1
     (date >= @start_date::date AND date < @end_date::date)
     OR (recurring = true AND date < @end_date::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= @start_date::date)
   AND is_percentage = false
 GROUP BY category, currency;
 
@@ -48,6 +50,7 @@ WHERE (
     (date >= @start_date::date AND date < @end_date::date)
     OR (recurring = true AND date < @end_date::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= @start_date::date)
   AND is_percentage = false
 GROUP BY category, currency;
 
@@ -66,6 +69,7 @@ WHERE e.property_id IN (
     (e.date >= @start_date::date AND e.date < @end_date::date)
     OR (e.recurring = true AND e.date < @end_date::date)
   )
+  AND (e.end_date IS NULL OR e.end_date >= @start_date::date)
   AND e.is_percentage = false
 GROUP BY e.category, e.currency;
 
@@ -76,6 +80,7 @@ WHERE property_id = $1
     (date >= @start_date::date AND date < @end_date::date)
     OR (recurring = true AND date < @end_date::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= @start_date::date)
   AND is_percentage = true;
 
 -- name: GetAllPercentageExpenses :many
@@ -84,6 +89,7 @@ WHERE (
     (date >= @start_date::date AND date < @end_date::date)
     OR (recurring = true AND date < @end_date::date)
   )
+  AND (expenses.end_date IS NULL OR expenses.end_date >= @start_date::date)
   AND is_percentage = true;
 
 -- name: GetAllPercentageExpensesForUser :many
@@ -97,4 +103,5 @@ WHERE e.property_id IN (
     (e.date >= @start_date::date AND e.date < @end_date::date)
     OR (e.recurring = true AND e.date < @end_date::date)
   )
+  AND (e.end_date IS NULL OR e.end_date >= @start_date::date)
   AND e.is_percentage = true;
