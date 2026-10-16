@@ -96,8 +96,8 @@ SELECT
     COALESCE(SUM(nights), 0)::INT AS total_nights
 FROM bookings
 WHERE status != 'cancelled'
-  AND check_in >= $1::date
-  AND check_in < $2::date
+  AND check_out >= $1::date
+  AND check_out < $2::date
 GROUP BY currency
 `
 
@@ -161,8 +161,8 @@ WHERE b.property_id IN (
     SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
   )
   AND b.status != 'cancelled'
-  AND b.check_in >= $2::date
-  AND b.check_in < $3::date
+  AND b.check_out >= $2::date
+  AND b.check_out < $3::date
 GROUP BY b.property_id, b.currency
 `
 
@@ -247,8 +247,8 @@ SELECT
     COUNT(*)::INT AS total_count
 FROM bookings b
 WHERE b.property_id = $1
-  AND b.check_in >= $2::date
-  AND b.check_in < $3::date
+  AND b.check_out >= $2::date
+  AND b.check_out < $3::date
 `
 
 type GetBookingAnalyticsByPropertyParams struct {
@@ -281,8 +281,8 @@ WHERE b.property_id IN (
     UNION
     SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = $1
   )
-  AND b.check_in >= $2::date
-  AND b.check_in < $3::date
+  AND b.check_out >= $2::date
+  AND b.check_out < $3::date
 `
 
 type GetBookingAnalyticsForUserParams struct {
@@ -316,8 +316,8 @@ SELECT
 FROM bookings
 WHERE property_id = $1
   AND status != 'cancelled'
-  AND check_in >= $2::date
-  AND check_in < $3::date
+  AND check_out >= $2::date
+  AND check_out < $3::date
 GROUP BY currency
 `
 
@@ -368,8 +368,8 @@ func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBooki
 const listBookingsByProperty = `-- name: ListBookingsByProperty :many
 SELECT id, property_id, platform, platform_reference, guest_name, check_in, check_out, nights, gross_amount, platform_fee, net_amount, currency, status, created_at, price, estimated_gross_amount FROM bookings
 WHERE property_id = $1
-  AND check_in >= $2::date
-  AND check_in < $3::date
+  AND check_out >= $2::date
+  AND check_out < $3::date
 ORDER BY check_in DESC
 `
 

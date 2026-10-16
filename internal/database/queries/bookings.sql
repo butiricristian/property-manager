@@ -1,8 +1,8 @@
 -- name: ListBookingsByProperty :many
 SELECT * FROM bookings
 WHERE property_id = $1
-  AND check_in >= @start_date::date
-  AND check_in < @end_date::date
+  AND check_out >= @start_date::date
+  AND check_out < @end_date::date
 ORDER BY check_in DESC;
 
 -- name: GetBooking :one
@@ -51,8 +51,8 @@ SELECT
 FROM bookings
 WHERE property_id = $1
   AND status != 'cancelled'
-  AND check_in >= @start_date::date
-  AND check_in < @end_date::date
+  AND check_out >= @start_date::date
+  AND check_out < @end_date::date
 GROUP BY currency;
 
 -- name: GetAllBookingsSummaryByCurrency :many
@@ -66,8 +66,8 @@ SELECT
     COALESCE(SUM(nights), 0)::INT AS total_nights
 FROM bookings
 WHERE status != 'cancelled'
-  AND check_in >= @start_date::date
-  AND check_in < @end_date::date
+  AND check_out >= @start_date::date
+  AND check_out < @end_date::date
 GROUP BY currency;
 
 -- name: GetAllBookingsSummaryByCurrencyForUser :many
@@ -87,8 +87,8 @@ WHERE b.property_id IN (
     SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
   )
   AND b.status != 'cancelled'
-  AND b.check_in >= @start_date::date
-  AND b.check_in < @end_date::date
+  AND b.check_out >= @start_date::date
+  AND b.check_out < @end_date::date
 GROUP BY b.property_id, b.currency;
 
 -- name: GetBookingAnalyticsByProperty :one
@@ -98,8 +98,8 @@ SELECT
     COUNT(*)::INT AS total_count
 FROM bookings b
 WHERE b.property_id = $1
-  AND b.check_in >= @start_date::date
-  AND b.check_in < @end_date::date;
+  AND b.check_out >= @start_date::date
+  AND b.check_out < @end_date::date;
 
 -- name: GetBookingAnalyticsForUser :one
 SELECT
@@ -112,5 +112,5 @@ WHERE b.property_id IN (
     UNION
     SELECT pps.property_id FROM property_shares pps WHERE pps.user_id = @user_id
   )
-  AND b.check_in >= @start_date::date
-  AND b.check_in < @end_date::date;
+  AND b.check_out >= @start_date::date
+  AND b.check_out < @end_date::date;
