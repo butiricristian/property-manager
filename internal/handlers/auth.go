@@ -167,6 +167,12 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// isHTTPS reports whether the client connected over TLS, either directly or via
+// a TLS-terminating proxy (Fly.io sets X-Forwarded-Proto).
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
 func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	if h.oauthConfig == nil {
 		respondError(w, http.StatusNotFound, "Google OAuth not configured")
@@ -185,6 +191,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 
@@ -216,6 +223,7 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   isHTTPS(r),
 	})
 
 	// Check for error from Google
