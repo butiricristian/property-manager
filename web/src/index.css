@@ -1,0 +1,161 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource/dm-sans/400.css";
+@import "@fontsource/dm-sans/500.css";
+@import "@fontsource/dm-sans/600.css";
+@import "@fontsource/dm-sans/700.css";
+@import "@fontsource-variable/bricolage-grotesque";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: 'Bricolage Grotesque Variable', 'DM Sans', sans-serif;
+    --font-sans: 'DM Sans', system-ui, sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-surface-subtle: var(--surface-subtle);
+    --color-placeholder: var(--placeholder);
+    --color-divider: var(--divider);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Tier 1 — brand primitives. Literal, reusable palette (bg-warm-100, text-terracotta …). */
+@theme {
+    --color-warm-50: #FBF9F5;
+    --color-warm-100: #F3EFE8;
+    --color-warm-200: #EDE6DB;
+    --color-warm-300: #EAE2D6;
+    --color-warm-400: #E5DBCC;
+    --color-warm-500: #B7ADA1;
+    --color-warm-600: #9A9086;
+    --color-warm-700: #8A8075;
+    --color-warm-800: #6E6459;
+    --color-warm-900: #2A241F;
+
+    --color-terracotta: #C0603A;
+    --color-terracotta-dark: #A54E2C;
+}
+
+/* Tier 2 — semantic aliases. Role-based, theme-aware; point at the primitives above. */
+:root {
+    --background: var(--color-warm-100);
+    --foreground: var(--color-warm-900);
+    --card: #FFFFFF;
+    --card-foreground: var(--color-warm-900);
+    --popover: #FFFFFF;
+    --popover-foreground: var(--color-warm-900);
+    --primary: var(--color-warm-900);
+    --primary-foreground: var(--color-warm-100);
+    --secondary: var(--color-warm-200);
+    --secondary-foreground: var(--color-warm-900);
+    --muted: var(--color-warm-200);
+    --muted-foreground: var(--color-warm-700);
+    --accent: #E9DCCB;
+    --accent-foreground: var(--color-warm-900);
+    --destructive: var(--color-terracotta);
+    --border: var(--color-warm-200);
+    --input: var(--color-warm-400);
+    --ring: var(--color-terracotta);
+    --placeholder: var(--color-warm-500);
+    --surface-subtle: var(--color-warm-50);
+    --divider: #F1ECE3;
+    --chart-1: var(--color-terracotta);
+    --chart-2: #4E9E6A;
+    --chart-3: #EAD3A0;
+    --chart-4: #A7D8B7;
+    --chart-5: #E4B7A6;
+    --radius: 0.75rem;
+    --sidebar: #FFFFFF;
+    --sidebar-foreground: var(--color-warm-900);
+    --sidebar-primary: var(--color-warm-900);
+    --sidebar-primary-foreground: var(--color-warm-100);
+    --sidebar-accent: var(--color-warm-100);
+    --sidebar-accent-foreground: var(--color-warm-900);
+    --sidebar-border: var(--color-warm-200);
+    --sidebar-ring: var(--color-terracotta);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --placeholder: oklch(0.55 0 0);
+    --surface-subtle: oklch(0.24 0 0);
+    --divider: oklch(1 0 0 / 10%);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
