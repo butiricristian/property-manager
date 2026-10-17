@@ -26,6 +26,13 @@
 - `internal/middleware/` — logging, CORS
 - `web/` — React frontend
 
+## Deployment
+- Fly.io app (`fly.toml`, `Dockerfile`); push to `main` deploys via `.github/workflows/deploy.yml`.
+- Migrations run automatically before each release (`release_command` → `release.sh` in the image).
+- Database: Supabase Postgres 17. Use the **session pooler** URL (direct host is IPv6-only); `.env.production` holds it locally.
+- `APP_ENV=production` (set in the image) makes the server refuse to start without `DATABASE_URL` and a ≥32-char `JWT_SECRET`.
+- Nightly encrypted `pg_dump` backups: `.github/workflows/backup.yml` (restore steps in its header).
+
 ## Notes
 - shadcn/ui v4 uses @base-ui/react (NOT @radix-ui). No `asChild` prop — use `render={<Component />}` instead.
 - Select `onValueChange` receives `(value: string | null)` — always handle null case.

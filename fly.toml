@@ -1,0 +1,30 @@
+# App names are global on Fly; change this if it's taken.
+app = "property-manager"
+# London: the closest Fly region to the Supabase database (AWS eu-west-1, Ireland).
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Runs in a temporary machine before each release; a failure aborts the deploy.
+  release_command = "./release.sh"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Background sync runs inside the server process, so keep exactly one machine up.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

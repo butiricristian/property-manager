@@ -1,0 +1,45 @@
+# Nightly encrypted pg_dump of the production database, kept as a workflow artifact.
+#
+# Required repository secrets:
+#   DATABASE_URL       Supabase session-pooler URL (GitHub runners have no IPv6)
+#   BACKUP_PASSPHRASE  Long random passphrase; store a copy outside GitHub
+#
+# Restore (download the artifact from the workflow run first):
+#   gpg --decrypt pm-YYYY-MM-DD.dump.gpg > pm.dump
+#   pg_restore --no-owner --no-acl --clean --if-exists -d "$TARGET_DATABASE_URL" pm.dump
+# Only the public schema is dumped. UUID defaults reference extensions.uuid_generate_v4(),
+# which Supabase provides; on plain Postgres run this in the target database first:
+#   CREATE SCHEMA extensions; CREATE EXTENSION "uuid-ossp" SCHEMA extensions;
+name: Database backup
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump and encrypt
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          file="pm-$(date -u +%F).dump"
+          # Client major version must be >= the server's (Supabase runs Postgres 17).
+          docker run --rm -e DATABASE_URL postgres:17 \
+            sh -c 'pg_dump --schema=public --format=custom --no-owner --no-acl "$DATABASE_URL"' > "$file"
+          test -s "$file"
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+            --symmetric --cipher-algo AES256 -o "$file.gpg" "$file"
+          rm "$file"
+          echo "FILE=$file.gpg" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 30
+          if-no-files-found: error

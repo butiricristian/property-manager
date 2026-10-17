@@ -1,0 +1,8 @@
+.git
+.env
+.env.*
+.claude
+.vscode
+bin
+web/node_modules
+web/dist
