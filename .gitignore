@@ -16,3 +16,4 @@ web/dist/
 
 # Env
 .env
+.env.*
