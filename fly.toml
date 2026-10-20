@@ -1,5 +1,5 @@
-# App names are global on Fly; change this if it's taken.
-app = "property-manager"
+# App names are global on Fly.
+app = "cristian-butiri-property-manager"
 # London: the closest Fly region to the Supabase database (AWS eu-west-1, Ireland).
 primary_region = "lhr"
 
