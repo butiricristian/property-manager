@@ -481,6 +481,7 @@ func (h *AuthHandler) seedGuestData(ctx context.Context, propertyID pgtype.UUID)
 		Category:        "electricity",
 		Description:     "Monthly electricity bill",
 		Amount:          demoNumeric(87.50),
+		Percentage:      demoNumeric(0),
 		Currency:        "EUR",
 		Date:            demoDate(monthStart.AddDate(0, 0, 14)),
 		Recurring:       true,
@@ -492,11 +493,12 @@ func (h *AuthHandler) seedGuestData(ctx context.Context, propertyID pgtype.UUID)
 
 	// Income tax rule (10% of profit)
 	_, err = h.queries.CreateTaxRule(ctx, sqlc.CreateTaxRuleParams{
-		PropertyID: propertyID,
-		Name:       "Income Tax (10%)",
-		Type:       "percentage",
-		Percentage: demoNumeric(10),
-		Currency:   "EUR",
+		PropertyID:  propertyID,
+		Name:        "Income Tax (10%)",
+		Type:        "percentage",
+		Percentage:  demoNumeric(10),
+		FixedAmount: demoNumeric(0),
+		Currency:    "EUR",
 	})
 	if err != nil {
 		return fmt.Errorf("create tax rule: %w", err)
