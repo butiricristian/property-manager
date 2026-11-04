@@ -25,10 +25,11 @@ type AuthHandler struct {
 	queries     *sqlc.Queries
 	jwtSvc      *auth.JWTService
 	oauthConfig *oauth2.Config
+	frontendURL string
 }
 
-func NewAuthHandler(q *sqlc.Queries, jwtSvc *auth.JWTService, oauthConfig *oauth2.Config) *AuthHandler {
-	return &AuthHandler{queries: q, jwtSvc: jwtSvc, oauthConfig: oauthConfig}
+func NewAuthHandler(q *sqlc.Queries, jwtSvc *auth.JWTService, oauthConfig *oauth2.Config, frontendURL string) *AuthHandler {
+	return &AuthHandler{queries: q, jwtSvc: jwtSvc, oauthConfig: oauthConfig, frontendURL: frontendURL}
 }
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
@@ -305,11 +306,7 @@ func (h *AuthHandler) respondWithTokenHTML(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Redirect to frontend with token — the frontend will read it from the URL.
-	frontendURL := "http://localhost:5173"
-	if r.Header.Get("X-Forwarded-Host") != "" {
-		frontendURL = ""
-	}
-	http.Redirect(w, r, fmt.Sprintf("%s/auth/callback?token=%s", frontendURL, token), http.StatusTemporaryRedirect)
+	http.Redirect(w, r, fmt.Sprintf("%s/auth/callback?token=%s", h.frontendURL, token), http.StatusTemporaryRedirect)
 }
 
 type googleUserInfo struct {

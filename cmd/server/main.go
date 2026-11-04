@@ -100,7 +100,7 @@ func main() {
 		log.Println("Google OAuth disabled (GOOGLE_CLIENT_ID and/or GOOGLE_CLIENT_SECRET not configured)")
 	}
 
-	authHandler := handlers.NewAuthHandler(queries, jwtSvc, oauthConfig)
+	authHandler := handlers.NewAuthHandler(queries, jwtSvc, oauthConfig, cfg.FrontendURL)
 	propertyHandler := handlers.NewPropertyHandler(queries)
 	bookingHandler := handlers.NewBookingHandler(queries, exchangeSvc)
 	expenseHandler := handlers.NewExpenseHandler(queries)

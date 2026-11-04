@@ -11,6 +11,7 @@ import (
 
 type Config struct {
 	Production         bool
+	FrontendURL        string
 	Port               string
 	DatabaseURL        string
 	BaseCurrency       string
@@ -64,8 +65,15 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Production serves the frontend from this server, so redirects stay same-origin.
+	frontendURL := "http://localhost:5173"
+	if production {
+		frontendURL = ""
+	}
+
 	cfg := &Config{
 		Production:         production,
+		FrontendURL:        frontendURL,
 		Port:               port,
 		DatabaseURL:        dbURL,
 		BaseCurrency:       baseCurrency,
