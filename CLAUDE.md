@@ -31,7 +31,7 @@
 - Migrations run automatically before each release (`release_command` → `release.sh` in the image).
 - Database: Supabase Postgres 17. Use the **session pooler** URL (direct host is IPv6-only); `.env.production` holds it locally.
 - `APP_ENV=production` (set in the image) makes the server refuse to start without `DATABASE_URL` and a ≥32-char `JWT_SECRET`.
-- Nightly encrypted `pg_dump` backups: `.github/workflows/backup.yml` (restore steps in its header).
+- Encrypted `pg_dump` backups run manually only: `.github/workflows/backup.yml` (restore steps in its header).
 
 ## Notes
 - shadcn/ui v4 uses @base-ui/react (NOT @radix-ui). No `asChild` prop — use `render={<Component />}` instead.
