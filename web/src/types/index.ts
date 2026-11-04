@@ -18,6 +18,7 @@ export interface Property {
   address: string;
   created_at: string;
   updated_at: string;
+  airbnb_retains_partner_payout: boolean;
   permission?: "admin" | "read";
 }
 
@@ -105,6 +106,7 @@ export interface DashboardSummary {
   total_income: number;
   platform_fees: number;
   net_income: number;
+  partner_payout_base: number;
   expenses: ExpenseBreakdown;
   profit: number;
   taxes: TaxEstimate[];

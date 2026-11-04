@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,9 +58,14 @@ import {
 interface PropertyForm {
   name: string;
   address: string;
+  airbnb_retains_partner_payout: boolean;
 }
 
-const emptyForm: PropertyForm = { name: "", address: "" };
+const emptyForm: PropertyForm = {
+  name: "",
+  address: "",
+  airbnb_retains_partner_payout: false,
+};
 
 const platformNames: Record<string, string> = {
   booking: "Booking.com",
@@ -148,7 +154,11 @@ export function PropertiesPage() {
 
   const handleEdit = (property: Property) => {
     setEditingId(property.id);
-    setForm({ name: property.name, address: property.address });
+    setForm({
+      name: property.name,
+      address: property.address,
+      airbnb_retains_partner_payout: property.airbnb_retains_partner_payout,
+    });
     setShares([]);
     setShareEmail("");
     setShareError(null);
@@ -267,6 +277,28 @@ export function PropertiesPage() {
                   }
                   placeholder="e.g. 123 Ocean Drive"
                 />
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="airbnb-retains-partner-payout"
+                  className="mt-0.5"
+                  checked={form.airbnb_retains_partner_payout}
+                  onCheckedChange={(checked) =>
+                    setForm((f) => ({
+                      ...f,
+                      airbnb_retains_partner_payout: checked,
+                    }))
+                  }
+                />
+                <div>
+                  <Label htmlFor="airbnb-retains-partner-payout">
+                    Airbnb retains the partner payout
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Airbnb pays your partner directly, so your Airbnb income
+                    stays fully yours and no partner payout is calculated on it.
+                  </p>
+                </div>
               </div>
               <Button onClick={handleSubmit} className="w-full">
                 {editingId ? "Update" : "Create"}

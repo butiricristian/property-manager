@@ -78,6 +78,7 @@ type DashboardSummary struct {
 	TotalIncome   decimal.Decimal `json:"total_income"`
 	PlatformFees  decimal.Decimal `json:"platform_fees"`
 	NetIncome     decimal.Decimal `json:"net_income"`
+	PartnerPayoutBase decimal.Decimal `json:"partner_payout_base"`
 	Expenses      ExpenseBreakdown `json:"expenses"`
 	Profit        decimal.Decimal `json:"profit"`
 	Taxes            []TaxEstimate   `json:"taxes"`

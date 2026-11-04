@@ -12,19 +12,25 @@ import (
 )
 
 const createProperty = `-- name: CreateProperty :one
-INSERT INTO properties (name, address, user_id)
-VALUES ($1, $2, $3)
-RETURNING id, name, address, created_at, updated_at, user_id
+INSERT INTO properties (name, address, user_id, airbnb_retains_partner_payout)
+VALUES ($1, $2, $3, $4)
+RETURNING id, name, address, created_at, updated_at, user_id, airbnb_retains_partner_payout
 `
 
 type CreatePropertyParams struct {
-	Name    string      `json:"name"`
-	Address string      `json:"address"`
-	UserID  pgtype.UUID `json:"user_id"`
+	Name                       string      `json:"name"`
+	Address                    string      `json:"address"`
+	UserID                     pgtype.UUID `json:"user_id"`
+	AirbnbRetainsPartnerPayout bool        `json:"airbnb_retains_partner_payout"`
 }
 
 func (q *Queries) CreateProperty(ctx context.Context, arg CreatePropertyParams) (Property, error) {
-	row := q.db.QueryRow(ctx, createProperty, arg.Name, arg.Address, arg.UserID)
+	row := q.db.QueryRow(ctx, createProperty,
+		arg.Name,
+		arg.Address,
+		arg.UserID,
+		arg.AirbnbRetainsPartnerPayout,
+	)
 	var i Property
 	err := row.Scan(
 		&i.ID,
@@ -33,6 +39,7 @@ func (q *Queries) CreateProperty(ctx context.Context, arg CreatePropertyParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UserID,
+		&i.AirbnbRetainsPartnerPayout,
 	)
 	return i, err
 }
@@ -52,7 +59,7 @@ func (q *Queries) DeleteProperty(ctx context.Context, arg DeletePropertyParams) 
 }
 
 const getProperty = `-- name: GetProperty :one
-SELECT id, name, address, created_at, updated_at, user_id FROM properties WHERE id = $1 AND user_id = $2
+SELECT id, name, address, created_at, updated_at, user_id, airbnb_retains_partner_payout FROM properties WHERE id = $1 AND user_id = $2
 `
 
 type GetPropertyParams struct {
@@ -70,16 +77,17 @@ func (q *Queries) GetProperty(ctx context.Context, arg GetPropertyParams) (Prope
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UserID,
+		&i.AirbnbRetainsPartnerPayout,
 	)
 	return i, err
 }
 
 const listAccessibleProperties = `-- name: ListAccessibleProperties :many
-SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, 'admin'::text AS permission
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, p.airbnb_retains_partner_payout, 'admin'::text AS permission
 FROM properties p
 WHERE p.user_id = $1
 UNION ALL
-SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, ps.permission
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, p.airbnb_retains_partner_payout, ps.permission
 FROM properties p
 JOIN property_shares ps ON ps.property_id = p.id
 WHERE ps.user_id = $1
@@ -87,13 +95,14 @@ ORDER BY created_at DESC
 `
 
 type ListAccessiblePropertiesRow struct {
-	ID         pgtype.UUID        `json:"id"`
-	Name       string             `json:"name"`
-	Address    string             `json:"address"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	Permission string             `json:"permission"`
+	ID                         pgtype.UUID        `json:"id"`
+	Name                       string             `json:"name"`
+	Address                    string             `json:"address"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	UserID                     pgtype.UUID        `json:"user_id"`
+	AirbnbRetainsPartnerPayout bool               `json:"airbnb_retains_partner_payout"`
+	Permission                 string             `json:"permission"`
 }
 
 func (q *Queries) ListAccessibleProperties(ctx context.Context, userID pgtype.UUID) ([]ListAccessiblePropertiesRow, error) {
@@ -112,6 +121,7 @@ func (q *Queries) ListAccessibleProperties(ctx context.Context, userID pgtype.UU
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UserID,
+			&i.AirbnbRetainsPartnerPayout,
 			&i.Permission,
 		); err != nil {
 			return nil, err
@@ -125,7 +135,7 @@ func (q *Queries) ListAccessibleProperties(ctx context.Context, userID pgtype.UU
 }
 
 const listProperties = `-- name: ListProperties :many
-SELECT id, name, address, created_at, updated_at, user_id FROM properties WHERE user_id = $1 ORDER BY created_at DESC
+SELECT id, name, address, created_at, updated_at, user_id, airbnb_retains_partner_payout FROM properties WHERE user_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListProperties(ctx context.Context, userID pgtype.UUID) ([]Property, error) {
@@ -144,6 +154,7 @@ func (q *Queries) ListProperties(ctx context.Context, userID pgtype.UUID) ([]Pro
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.UserID,
+			&i.AirbnbRetainsPartnerPayout,
 		); err != nil {
 			return nil, err
 		}
@@ -157,16 +168,17 @@ func (q *Queries) ListProperties(ctx context.Context, userID pgtype.UUID) ([]Pro
 
 const updateProperty = `-- name: UpdateProperty :one
 UPDATE properties
-SET name = $2, address = $3, updated_at = NOW()
+SET name = $2, address = $3, airbnb_retains_partner_payout = $5, updated_at = NOW()
 WHERE id = $1 AND user_id = $4
-RETURNING id, name, address, created_at, updated_at, user_id
+RETURNING id, name, address, created_at, updated_at, user_id, airbnb_retains_partner_payout
 `
 
 type UpdatePropertyParams struct {
-	ID      pgtype.UUID `json:"id"`
-	Name    string      `json:"name"`
-	Address string      `json:"address"`
-	UserID  pgtype.UUID `json:"user_id"`
+	ID                         pgtype.UUID `json:"id"`
+	Name                       string      `json:"name"`
+	Address                    string      `json:"address"`
+	UserID                     pgtype.UUID `json:"user_id"`
+	AirbnbRetainsPartnerPayout bool        `json:"airbnb_retains_partner_payout"`
 }
 
 func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) (Property, error) {
@@ -175,6 +187,7 @@ func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) 
 		arg.Name,
 		arg.Address,
 		arg.UserID,
+		arg.AirbnbRetainsPartnerPayout,
 	)
 	var i Property
 	err := row.Scan(
@@ -184,6 +197,7 @@ func (q *Queries) UpdateProperty(ctx context.Context, arg UpdatePropertyParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.UserID,
+		&i.AirbnbRetainsPartnerPayout,
 	)
 	return i, err
 }

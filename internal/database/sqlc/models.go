@@ -105,12 +105,13 @@ type Invoice struct {
 }
 
 type Property struct {
-	ID        pgtype.UUID        `json:"id"`
-	Name      string             `json:"name"`
-	Address   string             `json:"address"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-	UserID    pgtype.UUID        `json:"user_id"`
+	ID                         pgtype.UUID        `json:"id"`
+	Name                       string             `json:"name"`
+	Address                    string             `json:"address"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	UserID                     pgtype.UUID        `json:"user_id"`
+	AirbnbRetainsPartnerPayout bool               `json:"airbnb_retains_partner_payout"`
 }
 
 type PropertyMapping struct {
