@@ -35,7 +35,7 @@ import {
 import { useProperty } from "@/context/PropertyContext";
 import { useAuth } from "@/context/AuthContext";
 import { DateRangeSelector } from "@/components/DateRangeSelector";
-import type { Expense, ExpenseCategory } from "@/types";
+import type { Expense, ExpenseCategory, IncomePlatform } from "@/types";
 import { Plus, Pencil, Copy, Trash2, Upload, Loader2 } from "lucide-react";
 
 const CATEGORIES: ExpenseCategory[] = [
@@ -69,6 +69,12 @@ const QUICK_CATEGORIES: ExpenseCategory[] = [
 ];
 
 
+const INCOME_PLATFORMS: { value: IncomePlatform; label: string }[] = [
+  { value: "booking", label: "Booking.com" },
+  { value: "airbnb", label: "Airbnb" },
+];
+const ALL_INCOME_PLATFORMS = INCOME_PLATFORMS.map((p) => p.value);
+
 // Most recent non-percentage amount per category (with its date so newer wins).
 type LastAmountMap = Record<string, { amount: number; date: string }>;
 
@@ -94,6 +100,7 @@ interface ExpenseForm {
   recurring: boolean;
   isPercentage: boolean;
   percentage: string;
+  incomePlatforms: IncomePlatform[];
 }
 
 const emptyForm: ExpenseForm = {
@@ -106,6 +113,7 @@ const emptyForm: ExpenseForm = {
   recurring: false,
   isPercentage: false,
   percentage: "",
+  incomePlatforms: ALL_INCOME_PLATFORMS,
 };
 
 const dateOnly = (d: string) => String(d).slice(0, 10);
@@ -177,6 +185,9 @@ export function ExpensesPage() {
     listExpenses(propertyId, dateRange.startDate, dateRange.endDate).then(setExpenses).catch(console.error);
   };
 
+  // Only a percentage partner payout is computed on a selection of income.
+  const hasIncomeSelection = form.isPercentage && form.category === "partner_payout";
+
   const handleSubmit = async () => {
     if (!propertyId) return;
 
@@ -186,6 +197,7 @@ export function ExpensesPage() {
       amountInputRef.current?.focus();
       return;
     }
+    if (hasIncomeSelection && form.incomePlatforms.length === 0) return;
 
     const data = {
       category: form.category,
@@ -197,6 +209,7 @@ export function ExpensesPage() {
       recurring: form.recurring,
       is_percentage: form.isPercentage,
       percentage: form.isPercentage ? parseFloat(form.percentage) : 0,
+      income_platforms: form.incomePlatforms,
     };
 
     if (editingId) {
@@ -238,6 +251,7 @@ export function ExpensesPage() {
       recurring: false,
       isPercentage: false,
       percentage: "",
+      incomePlatforms: ALL_INCOME_PLATFORMS,
     });
     setFocusAmount(true);
     setFormOpen(true);
@@ -263,6 +277,7 @@ export function ExpensesPage() {
       recurring: expense.recurring,
       isPercentage: expense.is_percentage,
       percentage: expense.is_percentage ? expense.percentage : "",
+      incomePlatforms: expense.income_platforms,
     });
     setFormOpen(true);
   };
@@ -283,6 +298,7 @@ export function ExpensesPage() {
       recurring: expense.recurring,
       isPercentage: expense.is_percentage,
       percentage: expense.is_percentage ? expense.percentage : "",
+      incomePlatforms: expense.income_platforms,
     });
     setFormOpen(true);
   };
@@ -320,6 +336,7 @@ export function ExpensesPage() {
         recurring: false,
         isPercentage: false,
         percentage: "",
+        incomePlatforms: ALL_INCOME_PLATFORMS,
       });
       setFormOpen(true);
     } catch (err) {
@@ -440,6 +457,40 @@ export function ExpensesPage() {
                   />
                   Percentage of net income
                 </label>
+
+                {hasIncomeSelection && (
+                  <div className="space-y-[7px]">
+                    <Label>Compute on income from</Label>
+                    <div className="flex gap-4">
+                      {INCOME_PLATFORMS.map(({ value, label }) => (
+                        <label
+                          key={value}
+                          className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]"
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-[#C0603A]"
+                            checked={form.incomePlatforms.includes(value)}
+                            onChange={(e) =>
+                              setForm((f) => ({
+                                ...f,
+                                incomePlatforms: e.target.checked
+                                  ? [...f.incomePlatforms, value]
+                                  : f.incomePlatforms.filter((p) => p !== value),
+                              }))
+                            }
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-[#9A9086]">
+                      {form.incomePlatforms.length === 0
+                        ? "Select at least one income source."
+                        : "Untick a platform that pays your partner directly."}
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-[7px]">
                   <Label>{form.isPercentage ? "Percentage" : "Amount"}</Label>
@@ -622,7 +673,7 @@ export function ExpensesPage() {
                 <TableCell>{e.description}</TableCell>
                 <TableCell className="font-medium">
                   {e.is_percentage
-                    ? `${parseFloat(e.percentage)}%`
+                    ? `${parseFloat(e.percentage)}%${formatIncomeScope(e)}`
                     : formatAmount(e.amount, e.currency)}
                 </TableCell>
                 <TableCell>
@@ -665,6 +716,13 @@ export function ExpensesPage() {
       )}
     </div>
   );
+}
+
+// Spells out the income a partial percentage expense is computed on.
+function formatIncomeScope(e: Expense): string {
+  if (e.income_platforms.length === INCOME_PLATFORMS.length) return "";
+  const names = INCOME_PLATFORMS.filter((p) => e.income_platforms.includes(p.value));
+  return ` of ${names.map((p) => p.label).join(", ")}`;
 }
 
 function formatDate(d: string): string {

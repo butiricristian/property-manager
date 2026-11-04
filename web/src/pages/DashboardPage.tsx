@@ -339,7 +339,7 @@ function DashboardContent({
   // The payout is a % of net income and already sits inside expenses.total,
   // so `profit` is what's left for you after it — don't subtract it again.
   const partnerBase = summary.partner_payout_base;
-  const partnerExcludesAirbnb = partnerBase !== summary.net_income;
+  const partnerBaseIsPartial = partnerBase !== summary.net_income;
 
   const occ = summary.occupancy_rate; // 0..1
   const bookedNights = Math.round(occ * days);
@@ -516,8 +516,8 @@ function DashboardContent({
           {hasPartner && (
             <div className="flex items-center justify-between border-t border-dashed border-[#EAE2D6] pt-[13px] text-[12.5px] text-muted-foreground">
               <span>
-                Partner split on net income
-                {partnerExcludesAirbnb && " excluding Airbnb"} ({money(partnerBase, cur)})
+                Partner split on {partnerBaseIsPartial ? "selected" : "net"} income (
+                {money(partnerBase, cur)})
               </span>
               <span className={blur}>
                 Your share after expenses{" "}

@@ -147,16 +147,15 @@ func (q *Queries) GetAllBookingsSummaryByCurrency(ctx context.Context, arg GetAl
 const getAllBookingsSummaryByCurrencyForUser = `-- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
     b.property_id,
+    b.platform,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
     COALESCE(SUM(b.platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
     COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income,
-    COALESCE(SUM(b.net_amount) FILTER (WHERE b.platform <> 'airbnb' OR NOT p.airbnb_retains_partner_payout), 0)::DECIMAL(10,2) AS partner_payout_base,
     COUNT(*)::INT AS bookings_count,
     COALESCE(SUM(b.nights), 0)::INT AS total_nights
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
 WHERE b.property_id IN (
     SELECT prp.id FROM properties prp WHERE prp.user_id = $1
     UNION
@@ -165,7 +164,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_out >= $2::date
   AND b.check_out < $3::date
-GROUP BY b.property_id, b.currency
+GROUP BY b.property_id, b.platform, b.currency
 `
 
 type GetAllBookingsSummaryByCurrencyForUserParams struct {
@@ -175,15 +174,15 @@ type GetAllBookingsSummaryByCurrencyForUserParams struct {
 }
 
 type GetAllBookingsSummaryByCurrencyForUserRow struct {
-	PropertyID        pgtype.UUID    `json:"property_id"`
-	Currency          string         `json:"currency"`
-	TotalIncome       pgtype.Numeric `json:"total_income"`
-	TotalPrice        pgtype.Numeric `json:"total_price"`
-	PlatformFees      pgtype.Numeric `json:"platform_fees"`
-	NetIncome         pgtype.Numeric `json:"net_income"`
-	PartnerPayoutBase pgtype.Numeric `json:"partner_payout_base"`
-	BookingsCount     int32          `json:"bookings_count"`
-	TotalNights       int32          `json:"total_nights"`
+	PropertyID    pgtype.UUID    `json:"property_id"`
+	Platform      string         `json:"platform"`
+	Currency      string         `json:"currency"`
+	TotalIncome   pgtype.Numeric `json:"total_income"`
+	TotalPrice    pgtype.Numeric `json:"total_price"`
+	PlatformFees  pgtype.Numeric `json:"platform_fees"`
+	NetIncome     pgtype.Numeric `json:"net_income"`
+	BookingsCount int32          `json:"bookings_count"`
+	TotalNights   int32          `json:"total_nights"`
 }
 
 func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, arg GetAllBookingsSummaryByCurrencyForUserParams) ([]GetAllBookingsSummaryByCurrencyForUserRow, error) {
@@ -197,12 +196,12 @@ func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, ar
 		var i GetAllBookingsSummaryByCurrencyForUserRow
 		if err := rows.Scan(
 			&i.PropertyID,
+			&i.Platform,
 			&i.Currency,
 			&i.TotalIncome,
 			&i.TotalPrice,
 			&i.PlatformFees,
 			&i.NetIncome,
-			&i.PartnerPayoutBase,
 			&i.BookingsCount,
 			&i.TotalNights,
 		); err != nil {
@@ -310,21 +309,20 @@ func (q *Queries) GetBookingAnalyticsForUser(ctx context.Context, arg GetBooking
 
 const getBookingsSummaryByCurrency = `-- name: GetBookingsSummaryByCurrency :many
 SELECT
-    b.currency,
-    COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
-    COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
-    COALESCE(SUM(b.platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
-    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income,
-    COALESCE(SUM(b.net_amount) FILTER (WHERE b.platform <> 'airbnb' OR NOT p.airbnb_retains_partner_payout), 0)::DECIMAL(10,2) AS partner_payout_base,
+    platform,
+    currency,
+    COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
+    COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
+    COALESCE(SUM(platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
+    COALESCE(SUM(net_amount), 0)::DECIMAL(10,2) AS net_income,
     COUNT(*)::INT AS bookings_count,
-    COALESCE(SUM(b.nights), 0)::INT AS total_nights
-FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE b.property_id = $1
-  AND b.status != 'cancelled'
-  AND b.check_out >= $2::date
-  AND b.check_out < $3::date
-GROUP BY b.currency
+    COALESCE(SUM(nights), 0)::INT AS total_nights
+FROM bookings
+WHERE property_id = $1
+  AND status != 'cancelled'
+  AND check_out >= $2::date
+  AND check_out < $3::date
+GROUP BY platform, currency
 `
 
 type GetBookingsSummaryByCurrencyParams struct {
@@ -334,14 +332,14 @@ type GetBookingsSummaryByCurrencyParams struct {
 }
 
 type GetBookingsSummaryByCurrencyRow struct {
-	Currency          string         `json:"currency"`
-	TotalIncome       pgtype.Numeric `json:"total_income"`
-	TotalPrice        pgtype.Numeric `json:"total_price"`
-	PlatformFees      pgtype.Numeric `json:"platform_fees"`
-	NetIncome         pgtype.Numeric `json:"net_income"`
-	PartnerPayoutBase pgtype.Numeric `json:"partner_payout_base"`
-	BookingsCount     int32          `json:"bookings_count"`
-	TotalNights       int32          `json:"total_nights"`
+	Platform      string         `json:"platform"`
+	Currency      string         `json:"currency"`
+	TotalIncome   pgtype.Numeric `json:"total_income"`
+	TotalPrice    pgtype.Numeric `json:"total_price"`
+	PlatformFees  pgtype.Numeric `json:"platform_fees"`
+	NetIncome     pgtype.Numeric `json:"net_income"`
+	BookingsCount int32          `json:"bookings_count"`
+	TotalNights   int32          `json:"total_nights"`
 }
 
 func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBookingsSummaryByCurrencyParams) ([]GetBookingsSummaryByCurrencyRow, error) {
@@ -354,12 +352,12 @@ func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBooki
 	for rows.Next() {
 		var i GetBookingsSummaryByCurrencyRow
 		if err := rows.Scan(
+			&i.Platform,
 			&i.Currency,
 			&i.TotalIncome,
 			&i.TotalPrice,
 			&i.PlatformFees,
 			&i.NetIncome,
-			&i.PartnerPayoutBase,
 			&i.BookingsCount,
 			&i.TotalNights,
 		); err != nil {

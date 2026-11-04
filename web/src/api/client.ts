@@ -91,11 +91,7 @@ export const listProperties = () => request<Property[]>("/properties");
 export const getProperty = (id: string) =>
   request<Property>(`/properties/${id}`);
 
-export const createProperty = (data: {
-  name: string;
-  address: string;
-  airbnb_retains_partner_payout: boolean;
-}) =>
+export const createProperty = (data: { name: string; address: string }) =>
   request<Property>("/properties", {
     method: "POST",
     body: JSON.stringify(data),
@@ -103,7 +99,7 @@ export const createProperty = (data: {
 
 export const updateProperty = (
   id: string,
-  data: { name: string; address: string; airbnb_retains_partner_payout: boolean }
+  data: { name: string; address: string }
 ) =>
   request<Property>(`/properties/${id}`, {
     method: "PUT",

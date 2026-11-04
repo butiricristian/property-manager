@@ -12,13 +12,13 @@ ORDER BY date DESC;
 SELECT * FROM expenses WHERE id = $1;
 
 -- name: CreateExpense :one
-INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage, end_date)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO expenses (property_id, category, description, amount, currency, date, recurring, is_percentage, percentage, end_date, income_platforms)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: UpdateExpense :one
 UPDATE expenses
-SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9, end_date = $10
+SET category = $2, description = $3, amount = $4, currency = $5, date = $6, recurring = $7, is_percentage = $8, percentage = $9, end_date = $10, income_platforms = $11
 WHERE id = $1
 RETURNING *;
 

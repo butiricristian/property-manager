@@ -18,7 +18,6 @@ export interface Property {
   address: string;
   created_at: string;
   updated_at: string;
-  airbnb_retains_partner_payout: boolean;
   permission?: "admin" | "read";
 }
 
@@ -59,8 +58,11 @@ export interface Expense {
   recurring: boolean;
   is_percentage: boolean;
   percentage: string;
+  income_platforms: IncomePlatform[];
   created_at: string;
 }
+
+export type IncomePlatform = "booking" | "airbnb";
 
 export type ExpenseCategory =
   | "electricity"

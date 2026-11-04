@@ -57,9 +57,8 @@ func (h *PropertyHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 type createPropertyRequest struct {
-	Name                       string `json:"name"`
-	Address                    string `json:"address"`
-	AirbnbRetainsPartnerPayout bool   `json:"airbnb_retains_partner_payout"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
 }
 
 func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -98,10 +97,9 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	property, err := h.queries.CreateProperty(r.Context(), sqlc.CreatePropertyParams{
-		Name:                       req.Name,
-		Address:                    req.Address,
-		UserID:                     userID,
-		AirbnbRetainsPartnerPayout: req.AirbnbRetainsPartnerPayout,
+		Name:    req.Name,
+		Address: req.Address,
+		UserID:  userID,
 	})
 	if err != nil {
 		respondInternalError(w, "failed to create property", err)
@@ -111,9 +109,8 @@ func (h *PropertyHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type updatePropertyRequest struct {
-	Name                       string `json:"name"`
-	Address                    string `json:"address"`
-	AirbnbRetainsPartnerPayout bool   `json:"airbnb_retains_partner_payout"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
 }
 
 func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -140,11 +137,10 @@ func (h *PropertyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	property, err := h.queries.UpdateProperty(r.Context(), sqlc.UpdatePropertyParams{
-		ID:                         id,
-		Name:                       req.Name,
-		Address:                    req.Address,
-		UserID:                     userID,
-		AirbnbRetainsPartnerPayout: req.AirbnbRetainsPartnerPayout,
+		ID:      id,
+		Name:    req.Name,
+		Address: req.Address,
+		UserID:  userID,
 	})
 	if err != nil {
 		respondError(w, http.StatusNotFound, "property not found")

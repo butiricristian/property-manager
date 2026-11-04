@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -41,9 +42,9 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	totalIncome := decimal.Zero
 	platformFees := decimal.Zero
 	netIncome := decimal.Zero
-	partnerBase := decimal.Zero
 	bookingsCount := 0
 	totalNights := 0
+	netByProperty := netByPropertyPlatform{}
 
 	for _, row := range bookingRows {
 		currency := row.Currency
@@ -59,14 +60,10 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 		if err != nil {
 			return nil, err
 		}
-		base, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.PartnerPayoutBase), currency, baseCurrency, month)
-		if err != nil {
-			return nil, err
-		}
 		totalIncome = totalIncome.Add(income)
 		platformFees = platformFees.Add(fees)
 		netIncome = netIncome.Add(net)
-		partnerBase = partnerBase.Add(base)
+		netByProperty.add(propertyID, row.Platform, net)
 		bookingsCount += int(row.BookingsCount)
 		totalNights += int(row.TotalNights)
 	}
@@ -93,7 +90,7 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	if err != nil {
 		return nil, err
 	}
-	s.applyPercentageExpenses(pctRows, map[pgtype.UUID]decimal.Decimal{propertyID: netIncome}, map[pgtype.UUID]decimal.Decimal{propertyID: partnerBase}, &expenses)
+	s.applyPercentageExpenses(pctRows, netByProperty, &expenses)
 
 	analytics, err := s.queries.GetBookingAnalyticsByProperty(ctx, sqlc.GetBookingAnalyticsByPropertyParams{
 		PropertyID: propertyID,
@@ -115,7 +112,7 @@ func (s *DashboardService) GetPropertyDashboard(ctx context.Context, propertyID 
 	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
 		bookingsCount, totalNights, startDate, endDate, expenses,
 		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
-	summary.PartnerPayoutBase = partnerBase
+	summary.PartnerPayoutBase = partnerPayoutBase(pctRows, netByProperty)
 	summary.Taxes = taxes
 	summary.TotalTax = totalTax
 	summary.ProfitAfterTax = profit.Sub(totalTax)
@@ -142,12 +139,10 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	totalIncome := decimal.Zero
 	platformFees := decimal.Zero
 	netIncome := decimal.Zero
-	partnerBase := decimal.Zero
 	bookingsCount := 0
 	totalNights := 0
 	// Percentage expenses are scoped to their own property, so keep the split.
-	netByProperty := map[pgtype.UUID]decimal.Decimal{}
-	partnerBaseByProperty := map[pgtype.UUID]decimal.Decimal{}
+	netByProperty := netByPropertyPlatform{}
 
 	for _, row := range bookingRows {
 		currency := row.Currency
@@ -163,16 +158,10 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 		if err != nil {
 			return nil, err
 		}
-		base, err := s.exchangeSvc.Convert(ctx, numericToDecimal(row.PartnerPayoutBase), currency, baseCurrency, month)
-		if err != nil {
-			return nil, err
-		}
 		totalIncome = totalIncome.Add(income)
 		platformFees = platformFees.Add(fees)
 		netIncome = netIncome.Add(net)
-		partnerBase = partnerBase.Add(base)
-		netByProperty[row.PropertyID] = netByProperty[row.PropertyID].Add(net)
-		partnerBaseByProperty[row.PropertyID] = partnerBaseByProperty[row.PropertyID].Add(base)
+		netByProperty.add(row.PropertyID, row.Platform, net)
 		bookingsCount += int(row.BookingsCount)
 		totalNights += int(row.TotalNights)
 	}
@@ -199,7 +188,7 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	if err != nil {
 		return nil, err
 	}
-	s.applyPercentageExpenses(pctRows, netByProperty, partnerBaseByProperty, &expenses)
+	s.applyPercentageExpenses(pctRows, netByProperty, &expenses)
 
 	analytics, err := s.queries.GetBookingAnalyticsForUser(ctx, sqlc.GetBookingAnalyticsForUserParams{
 		UserID:    userID,
@@ -221,7 +210,7 @@ func (s *DashboardService) GetOverallDashboard(ctx context.Context, userID pgtyp
 	summary := buildSummary(month, baseCurrency, totalIncome, platformFees, netIncome,
 		bookingsCount, totalNights, startDate, endDate, expenses,
 		analytics.AvgLeadTimeDays, int(analytics.CancelledCount), int(analytics.TotalCount))
-	summary.PartnerPayoutBase = partnerBase
+	summary.PartnerPayoutBase = partnerPayoutBase(pctRows, netByProperty)
 	summary.Taxes = taxes
 	summary.TotalTax = totalTax
 	summary.ProfitAfterTax = profit.Sub(totalTax)
@@ -399,26 +388,55 @@ func setCategoryDecimal(expenses *models.ExpenseBreakdown, category string, valu
 	}
 }
 
+// netByPropertyPlatform holds net income split by property and booking platform,
+// the two scopes a percentage expense can be limited to.
+type netByPropertyPlatform map[pgtype.UUID]map[string]decimal.Decimal
+
+func (n netByPropertyPlatform) add(propertyID pgtype.UUID, platform string, net decimal.Decimal) {
+	if n[propertyID] == nil {
+		n[propertyID] = map[string]decimal.Decimal{}
+	}
+	n[propertyID][platform] = n[propertyID][platform].Add(net)
+}
+
 // applyPercentageExpenses charges each percentage expense against the net income
 // of the property it belongs to — a 20% partner on one property must not take a
-// cut of what the other properties earned. Partner payouts use partnerBaseByProperty
-// instead, which leaves out Airbnb income when Airbnb already pays the partner directly.
-func (s *DashboardService) applyPercentageExpenses(rows []sqlc.Expense, netByProperty, partnerBaseByProperty map[pgtype.UUID]decimal.Decimal, expenses *models.ExpenseBreakdown) {
+// cut of what the other properties earned — counting only the platforms the
+// expense selects, since e.g. Airbnb may already pay a co-host directly.
+func (s *DashboardService) applyPercentageExpenses(rows []sqlc.Expense, netByProperty netByPropertyPlatform, expenses *models.ExpenseBreakdown) {
 	hundred := decimal.NewFromInt(100)
 	for _, row := range rows {
-		baseByProperty := netByProperty
-		if row.Category == "partner_payout" {
-			baseByProperty = partnerBaseByProperty
-		}
-		base, ok := baseByProperty[row.PropertyID]
-		if !ok {
-			continue
+		base := decimal.Zero
+		for _, platform := range row.IncomePlatforms {
+			base = base.Add(netByProperty[row.PropertyID][platform])
 		}
 		pct := numericToDecimal(row.Percentage)
 		amount := pct.Div(hundred).Mul(base).Round(2)
 		setCategoryDecimal(expenses, row.Category, amount)
 		expenses.Total = expenses.Total.Add(amount)
 	}
+}
+
+// partnerPayoutBase is the net income partner payouts are computed on: a property
+// with percentage partner payouts counts only the platforms they select, any other
+// property counts in full.
+func partnerPayoutBase(rows []sqlc.Expense, netByProperty netByPropertyPlatform) decimal.Decimal {
+	selected := map[pgtype.UUID][]string{}
+	for _, row := range rows {
+		if row.Category == "partner_payout" {
+			selected[row.PropertyID] = append(selected[row.PropertyID], row.IncomePlatforms...)
+		}
+	}
+	base := decimal.Zero
+	for propertyID, netByPlatform := range netByProperty {
+		platforms, limited := selected[propertyID]
+		for platform, net := range netByPlatform {
+			if !limited || slices.Contains(platforms, platform) {
+				base = base.Add(net)
+			}
+		}
+	}
+	return base
 }
 
 func numericToFloat(n pgtype.Numeric) float64 {

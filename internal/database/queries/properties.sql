@@ -2,11 +2,11 @@
 SELECT * FROM properties WHERE user_id = $1 ORDER BY created_at DESC;
 
 -- name: ListAccessibleProperties :many
-SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, p.airbnb_retains_partner_payout, 'admin'::text AS permission
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, 'admin'::text AS permission
 FROM properties p
 WHERE p.user_id = $1
 UNION ALL
-SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, p.airbnb_retains_partner_payout, ps.permission
+SELECT p.id, p.name, p.address, p.created_at, p.updated_at, p.user_id, ps.permission
 FROM properties p
 JOIN property_shares ps ON ps.property_id = p.id
 WHERE ps.user_id = $1
@@ -16,13 +16,13 @@ ORDER BY created_at DESC;
 SELECT * FROM properties WHERE id = $1 AND user_id = $2;
 
 -- name: CreateProperty :one
-INSERT INTO properties (name, address, user_id, airbnb_retains_partner_payout)
-VALUES ($1, $2, $3, $4)
+INSERT INTO properties (name, address, user_id)
+VALUES ($1, $2, $3)
 RETURNING *;
 
 -- name: UpdateProperty :one
 UPDATE properties
-SET name = $2, address = $3, airbnb_retains_partner_payout = $5, updated_at = NOW()
+SET name = $2, address = $3, updated_at = NOW()
 WHERE id = $1 AND user_id = $4
 RETURNING *;
 

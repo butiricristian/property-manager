@@ -477,13 +477,14 @@ func (h *AuthHandler) seedGuestData(ctx context.Context, propertyID pgtype.UUID)
 
 	// Electricity bill
 	_, err := h.queries.CreateExpense(ctx, sqlc.CreateExpenseParams{
-		PropertyID:  propertyID,
-		Category:    "electricity",
-		Description: "Monthly electricity bill",
-		Amount:      demoNumeric(87.50),
-		Currency:    "EUR",
-		Date:        demoDate(monthStart.AddDate(0, 0, 14)),
-		Recurring:   true,
+		PropertyID:      propertyID,
+		Category:        "electricity",
+		Description:     "Monthly electricity bill",
+		Amount:          demoNumeric(87.50),
+		Currency:        "EUR",
+		Date:            demoDate(monthStart.AddDate(0, 0, 14)),
+		Recurring:       true,
+		IncomePlatforms: allIncomePlatforms,
 	})
 	if err != nil {
 		return fmt.Errorf("create expense: %w", err)

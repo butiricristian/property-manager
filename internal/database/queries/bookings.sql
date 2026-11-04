@@ -41,21 +41,20 @@ DELETE FROM bookings WHERE id = $1;
 
 -- name: GetBookingsSummaryByCurrency :many
 SELECT
-    b.currency,
-    COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
-    COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
-    COALESCE(SUM(b.platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
-    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income,
-    COALESCE(SUM(b.net_amount) FILTER (WHERE b.platform <> 'airbnb' OR NOT p.airbnb_retains_partner_payout), 0)::DECIMAL(10,2) AS partner_payout_base,
+    platform,
+    currency,
+    COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
+    COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
+    COALESCE(SUM(platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
+    COALESCE(SUM(net_amount), 0)::DECIMAL(10,2) AS net_income,
     COUNT(*)::INT AS bookings_count,
-    COALESCE(SUM(b.nights), 0)::INT AS total_nights
-FROM bookings b
-JOIN properties p ON p.id = b.property_id
-WHERE b.property_id = $1
-  AND b.status != 'cancelled'
-  AND b.check_out >= @start_date::date
-  AND b.check_out < @end_date::date
-GROUP BY b.currency;
+    COALESCE(SUM(nights), 0)::INT AS total_nights
+FROM bookings
+WHERE property_id = $1
+  AND status != 'cancelled'
+  AND check_out >= @start_date::date
+  AND check_out < @end_date::date
+GROUP BY platform, currency;
 
 -- name: GetAllBookingsSummaryByCurrency :many
 SELECT
@@ -75,16 +74,15 @@ GROUP BY currency;
 -- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
     b.property_id,
+    b.platform,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
     COALESCE(SUM(b.platform_fee), 0)::DECIMAL(10,2) AS platform_fees,
     COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income,
-    COALESCE(SUM(b.net_amount) FILTER (WHERE b.platform <> 'airbnb' OR NOT p.airbnb_retains_partner_payout), 0)::DECIMAL(10,2) AS partner_payout_base,
     COUNT(*)::INT AS bookings_count,
     COALESCE(SUM(b.nights), 0)::INT AS total_nights
 FROM bookings b
-JOIN properties p ON p.id = b.property_id
 WHERE b.property_id IN (
     SELECT prp.id FROM properties prp WHERE prp.user_id = @user_id
     UNION
@@ -93,7 +91,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_out >= @start_date::date
   AND b.check_out < @end_date::date
-GROUP BY b.property_id, b.currency;
+GROUP BY b.property_id, b.platform, b.currency;
 
 -- name: GetBookingAnalyticsByProperty :one
 SELECT

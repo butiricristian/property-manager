@@ -28,18 +28,19 @@ type Booking struct {
 }
 
 type Expense struct {
-	ID           pgtype.UUID        `json:"id"`
-	PropertyID   pgtype.UUID        `json:"property_id"`
-	Category     string             `json:"category"`
-	Description  string             `json:"description"`
-	Amount       pgtype.Numeric     `json:"amount"`
-	Currency     string             `json:"currency"`
-	Date         pgtype.Date        `json:"date"`
-	Recurring    bool               `json:"recurring"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	IsPercentage bool               `json:"is_percentage"`
-	Percentage   pgtype.Numeric     `json:"percentage"`
-	EndDate      pgtype.Date        `json:"end_date"`
+	ID              pgtype.UUID        `json:"id"`
+	PropertyID      pgtype.UUID        `json:"property_id"`
+	Category        string             `json:"category"`
+	Description     string             `json:"description"`
+	Amount          pgtype.Numeric     `json:"amount"`
+	Currency        string             `json:"currency"`
+	Date            pgtype.Date        `json:"date"`
+	Recurring       bool               `json:"recurring"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	IsPercentage    bool               `json:"is_percentage"`
+	Percentage      pgtype.Numeric     `json:"percentage"`
+	EndDate         pgtype.Date        `json:"end_date"`
+	IncomePlatforms []string           `json:"income_platforms"`
 }
 
 type Integration struct {
@@ -105,13 +106,12 @@ type Invoice struct {
 }
 
 type Property struct {
-	ID                         pgtype.UUID        `json:"id"`
-	Name                       string             `json:"name"`
-	Address                    string             `json:"address"`
-	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
-	UserID                     pgtype.UUID        `json:"user_id"`
-	AirbnbRetainsPartnerPayout bool               `json:"airbnb_retains_partner_payout"`
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	Address   string             `json:"address"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UserID    pgtype.UUID        `json:"user_id"`
 }
 
 type PropertyMapping struct {
