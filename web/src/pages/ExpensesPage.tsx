@@ -348,12 +348,11 @@ export function ExpensesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Expenses</h1>
-        <div className="flex gap-3">
-          <DateRangeSelector value={dateRange} onChange={setDateRange} />
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold">Expenses</h1>
           <Select value={propertyId} onValueChange={(v) => v && setPropertyId(v)}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="rounded-[11px] border border-border text-[13px]">
               <SelectValue placeholder="Select property">
                 {(value: string | null) => {
                   if (!value) return "Select property";
@@ -369,237 +368,242 @@ export function ExpensesPage() {
               ))}
             </SelectContent>
           </Select>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={extracting || !propertyId || isGuest}
-            title={isGuest ? "Create an account to use AI bill extraction" : undefined}
-          >
-            {extracting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="mr-2 h-4 w-4" />
-            )}
-            {extracting ? "Extracting..." : "Upload Bill"}
-          </Button>
-          <Dialog open={formOpen} onOpenChange={setFormOpen}>
-            <DialogTrigger
-              render={<Button />}
-              onClick={openNew}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <DateRangeSelector value={dateRange} onChange={setDateRange} />
+          <div className="flex flex-wrap gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={extracting || !propertyId || isGuest}
+              title={isGuest ? "Create an account to use AI bill extraction" : undefined}
             >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Expense
-            </DialogTrigger>
-            <DialogContent className="w-[460px] sm:max-w-[460px]">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingId
-                    ? "Edit expense"
-                    : duplicating
-                      ? "Duplicate expense"
-                      : "Add expense"}
-                </DialogTitle>
-              </DialogHeader>
+              {extracting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {extracting ? "Extracting..." : "Upload Bill"}
+            </Button>
+            <Dialog open={formOpen} onOpenChange={setFormOpen}>
+              <DialogTrigger
+                render={<Button />}
+                onClick={openNew}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Expense
+              </DialogTrigger>
+              <DialogContent className="w-[460px] sm:max-w-[460px]">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingId
+                      ? "Edit expense"
+                      : duplicating
+                        ? "Duplicate expense"
+                        : "Add expense"}
+                  </DialogTitle>
+                </DialogHeader>
 
-              <div className="space-y-4">
-                <div className="space-y-[7px]">
-                  <Label>Category</Label>
-                  <Select
-                    value={form.category}
-                    onValueChange={(v) =>
-                      v && setForm((f) => ({
-                        ...f,
-                        category: v as ExpenseCategory,
-                      }))
-                    }
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue>
-                        {(value: string | null) => value ? formatCategory(value) : "Select category"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {formatCategory(c)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-[7px]">
-                  <Label>Description</Label>
-                  <Input
-                    placeholder="e.g. Enel monthly bill"
-                    value={form.description}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, description: e.target.value }))
-                    }
-                  />
-                </div>
-
-                <label className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[#C0603A]"
-                    checked={form.isPercentage}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, isPercentage: e.target.checked }))
-                    }
-                  />
-                  Percentage of net income
-                </label>
-
-                {hasIncomeSelection && (
+                <div className="space-y-4">
                   <div className="space-y-[7px]">
-                    <Label>Compute on income from</Label>
-                    <div className="flex gap-4">
-                      {INCOME_PLATFORMS.map(({ value, label }) => (
-                        <label
-                          key={value}
-                          className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]"
-                        >
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-[#C0603A]"
-                            checked={form.incomePlatforms.includes(value)}
-                            onChange={(e) =>
-                              setForm((f) => ({
-                                ...f,
-                                incomePlatforms: e.target.checked
-                                  ? [...f.incomePlatforms, value]
-                                  : f.incomePlatforms.filter((p) => p !== value),
-                              }))
-                            }
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                    <p className="text-xs text-[#9A9086]">
-                      {form.incomePlatforms.length === 0
-                        ? "Select at least one income source."
-                        : "Untick a platform that pays your partner directly."}
-                    </p>
+                    <Label>Category</Label>
+                    <Select
+                      value={form.category}
+                      onValueChange={(v) =>
+                        v && setForm((f) => ({
+                          ...f,
+                          category: v as ExpenseCategory,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue>
+                          {(value: string | null) => value ? formatCategory(value) : "Select category"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {formatCategory(c)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                )}
 
-                <div className="space-y-[7px]">
-                  <Label>{form.isPercentage ? "Percentage" : "Amount"}</Label>
-                  <div className="flex gap-2">
-                    <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border-[1.5px] border-input bg-card px-3.5 transition-colors focus-within:border-ring">
-                      {!form.isPercentage && (
-                        <span className="text-[15px] font-medium text-muted-foreground">
-                          {form.currency}
-                        </span>
-                      )}
-                      <input
-                        ref={amountInputRef}
-                        inputMode="decimal"
-                        value={form.isPercentage ? form.percentage : form.amount}
-                        placeholder={
-                          form.isPercentage
-                            ? "0"
-                            : lastAmounts[form.category]
-                              ? lastAmounts[form.category].amount.toFixed(2)
-                              : "0.00"
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value.replace(/[^\d.]/g, "");
-                          setForm((f) =>
-                            f.isPercentage
-                              ? { ...f, percentage: v }
-                              : { ...f, amount: v }
-                          );
-                        }}
-                        onKeyDown={submitOnEnter}
-                        className="w-full min-w-0 bg-transparent font-heading text-[17px] font-semibold text-foreground outline-none placeholder:font-normal placeholder:text-placeholder"
-                      />
-                      {form.isPercentage && (
-                        <span className="text-[15px] font-medium text-muted-foreground">
-                          %
-                        </span>
-                      )}
-                    </div>
-                    {!form.isPercentage && (
-                      <Select
-                        value={form.currency}
-                        onValueChange={(v) =>
-                          v && setForm((f) => ({ ...f, currency: v }))
-                        }
-                      >
-                        <SelectTrigger className="w-32 shrink-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="RON">RON</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
-                          <SelectItem value="USD">USD</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-[7px]">
-                  <Label>{form.recurring ? "Starts" : "Date"}</Label>
-                  <Input
-                    type="date"
-                    value={form.date}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, date: e.target.value }))
-                    }
-                  />
-                </div>
-
-                <label className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[#C0603A]"
-                    checked={form.recurring}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, recurring: e.target.checked }))
-                    }
-                  />
-                  Recurring (monthly)
-                </label>
-
-                {form.recurring && (
                   <div className="space-y-[7px]">
-                    <Label>Ends after (optional)</Label>
+                    <Label>Description</Label>
                     <Input
-                      type="date"
-                      min={form.date}
-                      value={form.endDate}
+                      placeholder="e.g. Enel monthly bill"
+                      value={form.description}
                       onChange={(e) =>
-                        setForm((f) => ({ ...f, endDate: e.target.value }))
+                        setForm((f) => ({ ...f, description: e.target.value }))
                       }
                     />
-                    <p className="text-xs text-[#9A9086]">
-                      Last day this applies — leave empty to run indefinitely. To
-                      change a rate, end this one and add a replacement starting the
-                      next day.
-                    </p>
                   </div>
-                )}
 
-                <Button
-                  onClick={handleSubmit}
-                  className="mt-1 h-[50px] w-full rounded-[13px] text-[15px] font-semibold"
-                >
-                  {editingId ? "Update" : "Create"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+                  <label className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-[#C0603A]"
+                      checked={form.isPercentage}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, isPercentage: e.target.checked }))
+                      }
+                    />
+                    Percentage of net income
+                  </label>
+
+                  {hasIncomeSelection && (
+                    <div className="space-y-[7px]">
+                      <Label>Compute on income from</Label>
+                      <div className="flex gap-4">
+                        {INCOME_PLATFORMS.map(({ value, label }) => (
+                          <label
+                            key={value}
+                            className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]"
+                          >
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-[#C0603A]"
+                              checked={form.incomePlatforms.includes(value)}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  incomePlatforms: e.target.checked
+                                    ? [...f.incomePlatforms, value]
+                                    : f.incomePlatforms.filter((p) => p !== value),
+                                }))
+                              }
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-[#9A9086]">
+                        {form.incomePlatforms.length === 0
+                          ? "Select at least one income source."
+                          : "Untick a platform that pays your partner directly."}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-[7px]">
+                    <Label>{form.isPercentage ? "Percentage" : "Amount"}</Label>
+                    <div className="flex gap-2">
+                      <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border-[1.5px] border-input bg-card px-3.5 transition-colors focus-within:border-ring">
+                        {!form.isPercentage && (
+                          <span className="text-[15px] font-medium text-muted-foreground">
+                            {form.currency}
+                          </span>
+                        )}
+                        <input
+                          ref={amountInputRef}
+                          inputMode="decimal"
+                          value={form.isPercentage ? form.percentage : form.amount}
+                          placeholder={
+                            form.isPercentage
+                              ? "0"
+                              : lastAmounts[form.category]
+                                ? lastAmounts[form.category].amount.toFixed(2)
+                                : "0.00"
+                          }
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^\d.]/g, "");
+                            setForm((f) =>
+                              f.isPercentage
+                                ? { ...f, percentage: v }
+                                : { ...f, amount: v }
+                            );
+                          }}
+                          onKeyDown={submitOnEnter}
+                          className="w-full min-w-0 bg-transparent font-heading text-[17px] font-semibold text-foreground outline-none placeholder:font-normal placeholder:text-placeholder"
+                        />
+                        {form.isPercentage && (
+                          <span className="text-[15px] font-medium text-muted-foreground">
+                            %
+                          </span>
+                        )}
+                      </div>
+                      {!form.isPercentage && (
+                        <Select
+                          value={form.currency}
+                          onValueChange={(v) =>
+                            v && setForm((f) => ({ ...f, currency: v }))
+                          }
+                        >
+                          <SelectTrigger className="w-32 shrink-0">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="RON">RON</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                            <SelectItem value="USD">USD</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-[7px]">
+                    <Label>{form.recurring ? "Starts" : "Date"}</Label>
+                    <Input
+                      type="date"
+                      value={form.date}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, date: e.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2.5 text-[13.5px] font-semibold text-[#2A241F]">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-[#C0603A]"
+                      checked={form.recurring}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, recurring: e.target.checked }))
+                      }
+                    />
+                    Recurring (monthly)
+                  </label>
+
+                  {form.recurring && (
+                    <div className="space-y-[7px]">
+                      <Label>Ends after (optional)</Label>
+                      <Input
+                        type="date"
+                        min={form.date}
+                        value={form.endDate}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, endDate: e.target.value }))
+                        }
+                      />
+                      <p className="text-xs text-[#9A9086]">
+                        Last day this applies — leave empty to run indefinitely. To
+                        change a rate, end this one and add a replacement starting the
+                        next day.
+                      </p>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={handleSubmit}
+                    className="mt-1 h-[50px] w-full rounded-[13px] text-[15px] font-semibold"
+                  >
+                    {editingId ? "Update" : "Create"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
       </div>
 

@@ -129,12 +129,11 @@ export function BookingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Bookings</h1>
-        <div className="flex gap-3">
-          <DateRangeSelector value={dateRange} onChange={setDateRange} />
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold">Bookings</h1>
           <Select value={propertyId} onValueChange={(v) => v && setPropertyId(v)}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="rounded-[11px] border border-border text-[13px]">
               <SelectValue placeholder="Select property">
                 {(value: string | null) => {
                   if (!value) return "Select property";
@@ -150,15 +149,20 @@ export function BookingsPage() {
               ))}
             </SelectContent>
           </Select>
-          <ImportBookingsDialog
-            properties={properties}
-            propertyId={propertyId}
-            onImported={loadBookings}
-            triggerRender={<Button />}
-          >
-            <Upload className="mr-2 h-4 w-4" />
-            Import File
-          </ImportBookingsDialog>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <DateRangeSelector value={dateRange} onChange={setDateRange} />
+          <div className="flex flex-wrap gap-3">
+            <ImportBookingsDialog
+              properties={properties}
+              propertyId={propertyId}
+              onImported={loadBookings}
+              triggerRender={<Button />}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Import File
+            </ImportBookingsDialog>
+          </div>
         </div>
       </div>
 

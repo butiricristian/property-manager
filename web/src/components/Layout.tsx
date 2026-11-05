@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet, Link } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -8,6 +9,8 @@ import {
   FileText,
   Package,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
@@ -35,16 +38,59 @@ const navItems = [
 
 const currencies = ["EUR", "USD", "GBP", "RON"];
 
+const SIDEBAR_COLLAPSED_KEY = "sidebar-collapsed";
+
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function Layout() {
   const { currency, setCurrency } = useCurrency();
   const { user, logout, isGuest } = useAuth();
+  const [collapsed, setCollapsed] = useState(loadSidebarCollapsed);
+
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
     <div className="flex h-screen flex-col bg-background">
       {isGuest && <GuestBanner />}
       <div className="flex flex-1 overflow-hidden">
-      <aside className="w-64 border-r bg-card p-4 flex flex-col">
-        <h1 className="text-xl font-bold px-3 py-4">Property Manager</h1>
+      <aside
+        className={`${collapsed ? "w-[72px]" : "w-64"} shrink-0 border-r bg-card p-4 flex flex-col transition-[width] duration-200`}
+      >
+        <div className={`flex h-[60px] items-center ${collapsed ? "justify-center" : "justify-between pl-3"}`}>
+          {!collapsed && (
+            <h1 className="text-lg font-bold whitespace-nowrap">Property Manager</h1>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={toggleCollapsed}
+            title={toggleLabel}
+            aria-label={toggleLabel}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -58,56 +104,62 @@ export function Layout() {
                 }`
               }
               end={to === "/"}
+              title={collapsed ? label : undefined}
+              aria-label={label}
             >
-              <Icon className="h-4 w-4" />
-              {label}
+              <Icon className="h-4 w-4 shrink-0" />
+              {!collapsed && label}
             </NavLink>
           ))}
         </nav>
-        <div className="px-3 py-2">
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">
-            Currency
-          </label>
-          <Select value={currency} onValueChange={(v) => setCurrency(v ?? "EUR")}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {currencies.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {user && (
-          <div className="border-t px-3 py-3 flex items-center gap-2">
-            {user.avatar_url && (
-              <img
-                src={user.avatar_url}
-                alt=""
-                className="h-6 w-6 rounded-full shrink-0"
-                referrerPolicy="no-referrer"
-              />
+        {!collapsed && (
+          <>
+            <div className="px-3 py-2">
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                Currency
+              </label>
+              <Select value={currency} onValueChange={(v) => setCurrency(v ?? "EUR")}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {currencies.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {user && (
+              <div className="border-t px-3 py-3 flex items-center gap-2">
+                {user.avatar_url && (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    className="h-6 w-6 rounded-full shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <span className="text-xs text-muted-foreground truncate flex-1">
+                  {user.name || user.email}
+                </span>
+                <Button variant="ghost" size="icon" onClick={logout} title="Logout">
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             )}
-            <span className="text-xs text-muted-foreground truncate flex-1">
-              {user.name || user.email}
-            </span>
-            <Button variant="ghost" size="icon" onClick={logout} title="Logout">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              <Link to="/privacy" className="hover:underline">
+                Privacy
+              </Link>
+              {" | "}
+              <Link to="/terms" className="hover:underline">
+                Terms
+              </Link>
+            </div>
+          </>
         )}
-        <div className="px-3 py-2 text-xs text-muted-foreground">
-          <Link to="/privacy" className="hover:underline">
-            Privacy
-          </Link>
-          {" | "}
-          <Link to="/terms" className="hover:underline">
-            Terms
-          </Link>
-        </div>
       </aside>
       <main className="flex-1 overflow-y-auto p-6">
         <Outlet />
