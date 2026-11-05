@@ -147,7 +147,6 @@ func (q *Queries) GetAllBookingsSummaryByCurrency(ctx context.Context, arg GetAl
 const getAllBookingsSummaryByCurrencyForUser = `-- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
     b.property_id,
-    b.platform,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
@@ -164,7 +163,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_out >= $2::date
   AND b.check_out < $3::date
-GROUP BY b.property_id, b.platform, b.currency
+GROUP BY b.property_id, b.currency
 `
 
 type GetAllBookingsSummaryByCurrencyForUserParams struct {
@@ -175,7 +174,6 @@ type GetAllBookingsSummaryByCurrencyForUserParams struct {
 
 type GetAllBookingsSummaryByCurrencyForUserRow struct {
 	PropertyID    pgtype.UUID    `json:"property_id"`
-	Platform      string         `json:"platform"`
 	Currency      string         `json:"currency"`
 	TotalIncome   pgtype.Numeric `json:"total_income"`
 	TotalPrice    pgtype.Numeric `json:"total_price"`
@@ -196,7 +194,6 @@ func (q *Queries) GetAllBookingsSummaryByCurrencyForUser(ctx context.Context, ar
 		var i GetAllBookingsSummaryByCurrencyForUserRow
 		if err := rows.Scan(
 			&i.PropertyID,
-			&i.Platform,
 			&i.Currency,
 			&i.TotalIncome,
 			&i.TotalPrice,
@@ -309,7 +306,6 @@ func (q *Queries) GetBookingAnalyticsForUser(ctx context.Context, arg GetBooking
 
 const getBookingsSummaryByCurrency = `-- name: GetBookingsSummaryByCurrency :many
 SELECT
-    platform,
     currency,
     COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
@@ -322,7 +318,7 @@ WHERE property_id = $1
   AND status != 'cancelled'
   AND check_out >= $2::date
   AND check_out < $3::date
-GROUP BY platform, currency
+GROUP BY currency
 `
 
 type GetBookingsSummaryByCurrencyParams struct {
@@ -332,7 +328,6 @@ type GetBookingsSummaryByCurrencyParams struct {
 }
 
 type GetBookingsSummaryByCurrencyRow struct {
-	Platform      string         `json:"platform"`
 	Currency      string         `json:"currency"`
 	TotalIncome   pgtype.Numeric `json:"total_income"`
 	TotalPrice    pgtype.Numeric `json:"total_price"`
@@ -352,7 +347,6 @@ func (q *Queries) GetBookingsSummaryByCurrency(ctx context.Context, arg GetBooki
 	for rows.Next() {
 		var i GetBookingsSummaryByCurrencyRow
 		if err := rows.Scan(
-			&i.Platform,
 			&i.Currency,
 			&i.TotalIncome,
 			&i.TotalPrice,

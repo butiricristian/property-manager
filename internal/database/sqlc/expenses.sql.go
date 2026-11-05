@@ -348,6 +348,120 @@ func (q *Queries) GetExpensesByCategoryCurrency(ctx context.Context, arg GetExpe
 	return items, nil
 }
 
+const getNetIncomeCoveredByExpenses = `-- name: GetNetIncomeCoveredByExpenses :many
+SELECT
+    b.currency,
+    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income
+FROM bookings b
+WHERE EXISTS (
+    SELECT 1 FROM expenses e
+    WHERE e.id = ANY($1::uuid[])
+      AND b.property_id = e.property_id
+        AND b.platform = ANY(e.income_platforms)
+        AND b.status != 'cancelled'
+        AND b.check_out >= GREATEST(
+            $2::date,
+            CASE WHEN e.recurring THEN e.date ELSE date_trunc('month', e.date)::date END
+        )
+        AND b.check_out < LEAST(
+            $3::date,
+            CASE WHEN e.recurring THEN COALESCE(e.end_date + 1, $3::date)
+                 ELSE (date_trunc('month', e.date) + INTERVAL '1 month')::date END
+        )
+)
+GROUP BY b.currency
+`
+
+type GetNetIncomeCoveredByExpensesParams struct {
+	ExpenseIds []pgtype.UUID `json:"expense_ids"`
+	StartDate  pgtype.Date   `json:"start_date"`
+	EndDate    pgtype.Date   `json:"end_date"`
+}
+
+type GetNetIncomeCoveredByExpensesRow struct {
+	Currency  string         `json:"currency"`
+	NetIncome pgtype.Numeric `json:"net_income"`
+}
+
+// Net income covered by at least one of the given expenses, so income under two
+// overlapping expenses is only counted once.
+func (q *Queries) GetNetIncomeCoveredByExpenses(ctx context.Context, arg GetNetIncomeCoveredByExpensesParams) ([]GetNetIncomeCoveredByExpensesRow, error) {
+	rows, err := q.db.Query(ctx, getNetIncomeCoveredByExpenses, arg.ExpenseIds, arg.StartDate, arg.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetNetIncomeCoveredByExpensesRow{}
+	for rows.Next() {
+		var i GetNetIncomeCoveredByExpensesRow
+		if err := rows.Scan(&i.Currency, &i.NetIncome); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPercentageExpenseNetIncome = `-- name: GetPercentageExpenseNetIncome :many
+SELECT
+    e.id AS expense_id,
+    b.currency,
+    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income
+FROM expenses e
+JOIN bookings b ON b.property_id = e.property_id
+    AND b.platform = ANY(e.income_platforms)
+    AND b.status != 'cancelled'
+    AND b.check_out >= GREATEST(
+        $1::date,
+        CASE WHEN e.recurring THEN e.date ELSE date_trunc('month', e.date)::date END
+    )
+    AND b.check_out < LEAST(
+        $2::date,
+        CASE WHEN e.recurring THEN COALESCE(e.end_date + 1, $2::date)
+             ELSE (date_trunc('month', e.date) + INTERVAL '1 month')::date END
+    )
+WHERE e.id = ANY($3::uuid[])
+GROUP BY e.id, b.currency
+`
+
+type GetPercentageExpenseNetIncomeParams struct {
+	StartDate  pgtype.Date   `json:"start_date"`
+	EndDate    pgtype.Date   `json:"end_date"`
+	ExpenseIds []pgtype.UUID `json:"expense_ids"`
+}
+
+type GetPercentageExpenseNetIncomeRow struct {
+	ExpenseID pgtype.UUID    `json:"expense_id"`
+	Currency  string         `json:"currency"`
+	NetIncome pgtype.Numeric `json:"net_income"`
+}
+
+// A percentage expense only counts bookings checking out while it was active: a
+// recurring one from its start date through its end date, a one-off one during
+// its calendar month.
+func (q *Queries) GetPercentageExpenseNetIncome(ctx context.Context, arg GetPercentageExpenseNetIncomeParams) ([]GetPercentageExpenseNetIncomeRow, error) {
+	rows, err := q.db.Query(ctx, getPercentageExpenseNetIncome, arg.StartDate, arg.EndDate, arg.ExpenseIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPercentageExpenseNetIncomeRow{}
+	for rows.Next() {
+		var i GetPercentageExpenseNetIncomeRow
+		if err := rows.Scan(&i.ExpenseID, &i.Currency, &i.NetIncome); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPercentageExpensesByProperty = `-- name: GetPercentageExpensesByProperty :many
 SELECT id, property_id, category, description, amount, currency, date, recurring, created_at, is_percentage, percentage, end_date, income_platforms FROM expenses
 WHERE property_id = $1

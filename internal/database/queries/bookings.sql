@@ -41,7 +41,6 @@ DELETE FROM bookings WHERE id = $1;
 
 -- name: GetBookingsSummaryByCurrency :many
 SELECT
-    platform,
     currency,
     COALESCE(SUM(gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(price), 0)::DECIMAL(10,2) AS total_price,
@@ -54,7 +53,7 @@ WHERE property_id = $1
   AND status != 'cancelled'
   AND check_out >= @start_date::date
   AND check_out < @end_date::date
-GROUP BY platform, currency;
+GROUP BY currency;
 
 -- name: GetAllBookingsSummaryByCurrency :many
 SELECT
@@ -74,7 +73,6 @@ GROUP BY currency;
 -- name: GetAllBookingsSummaryByCurrencyForUser :many
 SELECT
     b.property_id,
-    b.platform,
     b.currency,
     COALESCE(SUM(b.gross_amount), 0)::DECIMAL(10,2) AS total_income,
     COALESCE(SUM(b.price), 0)::DECIMAL(10,2) AS total_price,
@@ -91,7 +89,7 @@ WHERE b.property_id IN (
   AND b.status != 'cancelled'
   AND b.check_out >= @start_date::date
   AND b.check_out < @end_date::date
-GROUP BY b.property_id, b.platform, b.currency;
+GROUP BY b.property_id, b.currency;
 
 -- name: GetBookingAnalyticsByProperty :one
 SELECT

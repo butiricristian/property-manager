@@ -105,3 +105,52 @@ WHERE e.property_id IN (
   )
   AND (e.end_date IS NULL OR e.end_date >= @start_date::date)
   AND e.is_percentage = true;
+
+-- A percentage expense only counts bookings checking out while it was active: a
+-- recurring one from its start date through its end date, a one-off one during
+-- its calendar month.
+-- name: GetPercentageExpenseNetIncome :many
+SELECT
+    e.id AS expense_id,
+    b.currency,
+    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income
+FROM expenses e
+JOIN bookings b ON b.property_id = e.property_id
+    AND b.platform = ANY(e.income_platforms)
+    AND b.status != 'cancelled'
+    AND b.check_out >= GREATEST(
+        @start_date::date,
+        CASE WHEN e.recurring THEN e.date ELSE date_trunc('month', e.date)::date END
+    )
+    AND b.check_out < LEAST(
+        @end_date::date,
+        CASE WHEN e.recurring THEN COALESCE(e.end_date + 1, @end_date::date)
+             ELSE (date_trunc('month', e.date) + INTERVAL '1 month')::date END
+    )
+WHERE e.id = ANY(@expense_ids::uuid[])
+GROUP BY e.id, b.currency;
+
+-- Net income covered by at least one of the given expenses, so income under two
+-- overlapping expenses is only counted once.
+-- name: GetNetIncomeCoveredByExpenses :many
+SELECT
+    b.currency,
+    COALESCE(SUM(b.net_amount), 0)::DECIMAL(10,2) AS net_income
+FROM bookings b
+WHERE EXISTS (
+    SELECT 1 FROM expenses e
+    WHERE e.id = ANY(@expense_ids::uuid[])
+      AND b.property_id = e.property_id
+        AND b.platform = ANY(e.income_platforms)
+        AND b.status != 'cancelled'
+        AND b.check_out >= GREATEST(
+            @start_date::date,
+            CASE WHEN e.recurring THEN e.date ELSE date_trunc('month', e.date)::date END
+        )
+        AND b.check_out < LEAST(
+            @end_date::date,
+            CASE WHEN e.recurring THEN COALESCE(e.end_date + 1, @end_date::date)
+                 ELSE (date_trunc('month', e.date) + INTERVAL '1 month')::date END
+        )
+)
+GROUP BY b.currency;
