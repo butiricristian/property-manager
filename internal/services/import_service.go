@@ -312,9 +312,13 @@ func readXLS(reader io.Reader) ([][]string, error) {
 	return records, nil
 }
 
+// cedillaToComma maps the cedilla forms of Romanian ş/ţ, which exports still mix
+// in, to the comma-below letters the column names are written with.
+var cedillaToComma = strings.NewReplacer("ş", "ș", "ţ", "ț", "Ş", "Ș", "Ţ", "Ț")
+
 func findColumn(header []string, names ...string) int {
 	for i, h := range header {
-		normalized := strings.ToLower(strings.TrimSpace(h))
+		normalized := strings.ToLower(cedillaToComma.Replace(strings.TrimSpace(h)))
 		for _, name := range names {
 			if normalized == name {
 				return i
@@ -367,17 +371,17 @@ func parseAmount(s string) float64 {
 
 func parseBookingComRow(header, row []string, propertyID pgtype.UUID, payouts map[string]PayoutData) (sqlc.UpsertBookingParams, error) {
 	typeIdx := findColumn(header, "type")
-	refIdx := findColumn(header, "reservation number", "booking number", "reservation id", "book number", "reference number")
-	guestIdx := findColumn(header, "booker name", "guest name", "guest name(s)", "guest", "booked by")
+	refIdx := findColumn(header, "reservation number", "booking number", "reservation id", "book number", "reference number", "numărul rezervării")
+	guestIdx := findColumn(header, "booker name", "guest name", "guest name(s)", "guest", "booked by", "rezervat de", "numele clientului")
 	checkInIdx := findColumn(header, "arrival", "check-in", "checkin")
 	checkOutIdx := findColumn(header, "departure", "check-out", "checkout")
-	amountIdx := findColumn(header, "original amount", "total payment", "total price", "price", "amount", "total")
+	amountIdx := findColumn(header, "original amount", "total payment", "total price", "price", "amount", "total", "preț")
 	priceIdx := findColumn(header, "final amount")
-	commissionIdx := findColumn(header, "commission", "commission amount")
-	commissionPctIdx := findColumn(header, "commission %", "commission%")
+	commissionIdx := findColumn(header, "commission", "commission amount", "valoare comision")
+	commissionPctIdx := findColumn(header, "commission %", "commission%", "comision %")
 	netIdx := findColumn(header, "net")
 	currencyIdx := findColumn(header, "currency")
-	statusIdx := findColumn(header, "status", "booking status", "reservation status")
+	statusIdx := findColumn(header, "status", "booking status", "reservation status", "statut")
 	nightsIdx := findColumn(header, "duration (nights)", "nights", "number of nights")
 
 	// Detect reservations page format: no "type" column, has "commission %" column,
